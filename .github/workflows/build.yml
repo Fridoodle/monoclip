@@ -21,5 +21,7 @@ jobs:
         run: dotnet run --project tests/MonoClip.Tests
       - name: UI tests (no audible cue)
         run: dotnet run --project tests/MonoClip.UiTests
+      - name: Hotkey fallback and deduplication
+        run: dotnet run --project tests/MonoClip.UiTests -p:HotkeyTestStartup=HotkeyFallbackTests
       - name: Build Windows app
         run: dotnet build src/MonoClip.Windows -c Release -warnaserror

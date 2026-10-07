@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <StartupObject Condition="'$(HotkeyTestStartup)' == ''">Program</StartupObject>
+    <StartupObject Condition="'$(HotkeyTestStartup)' != ''">$(HotkeyTestStartup)</StartupObject>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -11,6 +13,7 @@
     <Compile Include="../../src/MonoClip.Windows/WindowsIntegration.cs" Link="WindowsIntegration.cs" Condition="Exists('../../src/MonoClip.Windows/WindowsIntegration.cs')" />
     <Compile Include="../../src/MonoClip.Windows/UI/Hotkey.cs" Link="Hotkey.cs" Condition="Exists('../../src/MonoClip.Windows/UI/Hotkey.cs')" />
     <Compile Include="../../src/MonoClip.Windows/UI/HotkeyRegistration.cs" Link="HotkeyRegistration.cs" Condition="Exists('../../src/MonoClip.Windows/UI/HotkeyRegistration.cs')" />
+    <Compile Include="../../src/MonoClip.Windows/UI/RawHotkeyInput.cs" Link="RawHotkeyInput.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/SettingsForm.cs" Link="SettingsForm.cs" Condition="Exists('../../src/MonoClip.Windows/UI/SettingsForm.cs')" />
     <Compile Include="../../src/MonoClip.Windows/IClipEngine.cs" Link="IClipEngine.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/TrayAppContext.cs" Link="TrayAppContext.cs" Condition="Exists('../../src/MonoClip.Windows/UI/TrayAppContext.cs')" />

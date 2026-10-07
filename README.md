@@ -11,7 +11,7 @@
 - GPU-Aufnahme über DXGI; bei Startproblemen Windows Graphics Capture.
 - 720p / 1080p / 1440p / 2160p und 30 / 60 / 120 FPS, soweit die GPU die Kombination unterstützt.
 - Automatische Bitrate, begrenzter RAM-Puffer und 5–300 Sekunden Cliplänge.
-- Konfigurierbarer globaler Hotkey, standardmäßig **Ctrl+Shift+F9**.
+- Konfigurierbarer globaler Hotkey, standardmäßig **Ctrl+Shift+F9**. Windows-Hotkey plus ereignisgesteuerter Raw-Input-Zustellung, ohne Dauer-Polling.
 - Separate Desktop-/Mikrofonspuren und zusätzlicher Wiedergabe-Mix.
 - Abschaltbarer kurzer Beep nach erfolgreichem Speichern, keine Erfolgs-Popups.
 - Optionaler Windows-Autostart, immer minimiert; automatisches Aktivieren des Puffers separat einstellbar.
@@ -73,7 +73,7 @@ MKV lässt sich etwa mit VLC abspielen. Manche Upload-Dienste/Editoren verlangen
 - **GPU-Grenzen:** 4K120 ist nicht zugesichert. Kein heimlicher CPU-Fallback. 1440p/4K wurden noch nicht vollständig praktisch getestet.
 - **Schwarzes Bild:** Geschützte Inhalte, Sicherheitsdialoge und manche Spiel-/Treiberkombinationen sind nicht aufnehmbar. Treiber aktualisieren und Borderless testen; keine Schutzfunktionen deaktivieren.
 - **`.pending`:** Bei Unterbrechungen/Exportfehlern bleiben vorhandene Aufnahmen hier erhalten. Sie werden nicht automatisch gelöscht. Ein nie gespeicherter RAM-Puffer geht beim Beenden verloren.
-- **Hotkey belegt:** Eine andere Kombination wählen.
+- **Hotkey belegt:** Eine andere Kombination wählen. Seit 0.1.3 ergänzt Raw Input die normale Windows-Zustellung für Spiele, die Hotkey-Meldungen verschlucken. Die App bleibt ohne Adminrechte; Anti-Cheat-Einschränkungen werden nicht umgangen. Beim Ändern der Kombination im sichtbaren Eingabefeld wird kein Clip ausgelöst.
 - **Fehlende DLL / EntryPoint:** Vollständiges aktuelles Paket verwenden, Runtime einrichten und keine fremden OBS-DLLs darüberkopieren.
 - **Mikrofon nicht hörbar:** Standardgerät, Berechtigung und Lautstärke prüfen; im Player die richtige Spur auswählen.
 
