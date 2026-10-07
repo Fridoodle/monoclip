@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+dist/
+runtime/
+licenses/native/
+verification/bootstrap/
+verification/**/native*/
+verification/**/app/
+*.user
+*.suo
+*.mkv
+*.mp4
+*.log

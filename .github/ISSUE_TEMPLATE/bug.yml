@@ -1,0 +1,23 @@
+name: Fehler melden
+description: Aufnahme-, Audio-, Export- oder Startproblem melden.
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Was passiert?
+      description: Genaue Fehlermeldung und erwartetes Verhalten. Keine privaten Clips oder Tokens.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Schritte zur Reproduktion
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Umgebung
+      description: Windows-Version, GPU, Grafiktreiber, Spiel/Fenstermodus, MonoClip-Version und Aufnahme-Einstellungen.
+    validations:
+      required: true
