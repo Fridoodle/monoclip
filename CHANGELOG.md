@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.1.4 Beta
+
+- CMD-Launcher übergibt keinen fehlerhaft gequoteten Ordnerpfad mehr; PowerShell verwendet den eigenen Skriptordner.
+- Regressionstest reproduziert die echte CMD-/PowerShell-Argumentübergabe, auch bei Leerzeichen, Umlauten, Klammern und Ampersand im Pfad.
+- Windows-CI prüft zusätzlich eine vollständige Runtime-Einrichtung über die CMD-Datei mit offiziellem Download und SHA256-Prüfung.
+- Aufnahme und Hotkey-Fix aus 0.1.3 unverändert.
+
 ## 0.1.3 Beta
 
 - Ereignisgesteuerter Raw-Input-Zustellweg ergänzt globale Windows-Hotkeys, ohne Dauer-Polling oder Adminrechte.
