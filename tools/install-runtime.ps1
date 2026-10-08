@@ -23,7 +23,12 @@ try {
         Write-Host "Lade offizielle OBS-$version-Runtime..."
         Invoke-WebRequest -Uri $url -OutFile $zipPath
     }
-    $actual = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
+    # Use .NET directly: a parent PowerShell 7 process can leave Windows PowerShell's
+    # module path without the module exporting Get-FileHash.
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $hashInput = [IO.File]::OpenRead($zipPath)
+    try { $actual = [BitConverter]::ToString($sha.ComputeHash($hashInput)).Replace('-', '').ToLowerInvariant() }
+    finally { $hashInput.Dispose(); $sha.Dispose() }
     if ($actual -ne $expected) { throw 'SHA256 stimmt nicht. Es wurden keine Runtime-Dateien installiert.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)

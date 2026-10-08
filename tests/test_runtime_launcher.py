@@ -19,7 +19,7 @@ class LauncherTests(unittest.TestCase):
      env=os.environ.copy();env['MONOCLIP_PROBE']=str(output)
      result=subprocess.run('"'+str(cmd)+'"',shell=True,input=b'\r\n\r\n',capture_output=True,env=env,timeout=30)
      self.assertTrue(output.exists(),result.stdout.decode(errors='replace')+result.stderr.decode(errors='replace'))
-     data=json.loads(output.read_text(encoding='utf-8-sig'));self.assertEqual(pathlib.Path(data['destination']),folder)
+     data=json.loads(output.read_text(encoding='utf-8-sig'));self.assertTrue(pathlib.Path(data['destination']).samefile(folder))
      self.assertEqual(result.returncode,0)
  @unittest.skipUnless(os.environ.get('MONOCLIP_RUNTIME_TEST')=='1','Opt-in official runtime download integration test')
  def test_actual_installer_via_cmd(self):
