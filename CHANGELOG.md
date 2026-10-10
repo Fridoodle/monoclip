@@ -10,7 +10,7 @@
 - Eigenes App-Icon für EXE, Taskleiste und Fenster. Tray-Symbol ohne Eckklammern: schwarze Kachel mit Punkt (aufnehmend) bzw. Ring (gestoppt).
 - Auflösung und Bildrate sind jetzt erweiterte Einstellungen (Standard 1080p60).
 - Aufgeräumter Programmordner: nur noch `MonoClip.exe` (Starter, ca. 0,15 s) sowie `app\` und `info\` statt rund 300 losen Dateien. Autostart und `--settings` funktionieren unverändert.
-- Deutlich kleiner: Download 71 → ca. 49 MB, entpackt 298 → 150 Dateien. Nie referenzierte .NET-Assemblies und Debugger-/Crashdump-Dateien entfallen (ohne Code aus benutzten Assemblies zu schneiden); unbenutzte OBS-Teile (WebRTC, Lua, OpenGL, QSV-Test, Streaming-Plugin `obs-outputs`) werden nicht mehr ausgeliefert. Release-Starter per NativeAOT (ca. 1,3 MB).
+- Deutlich kleiner: Download 71 → 54 MB, entpackt 298 → 150 Dateien. Nie referenzierte .NET-Assemblies und Debugger-/Crashdump-Dateien entfallen (ohne Code aus benutzten Assemblies zu schneiden); unbenutzte OBS-Teile (WebRTC, Lua, OpenGL, QSV-Test, Streaming-Plugin `obs-outputs`) werden nicht mehr ausgeliefert. Release-Starter per NativeAOT (ca. 1,1 MB).
 - Effizienter im Betrieb: Einstellungen per JSON-Source-Generator, Fenster-/Monitor-Infos werden pro Fenster zwischengespeichert statt viermal pro Sekunde neu abgefragt, OBS-Log mit dauerhaft geöffnetem Writer, kein Hintergrund-GC-Thread.
 
 ## 0.1.6 Beta

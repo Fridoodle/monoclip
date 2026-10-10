@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Starter in the portable folder root. OBS finds its helper programs (obs-ffmpeg-mux.exe, encoder
        tests) next to the running EXE, so the real app stays in app\ with all of its files.
-       Release builds use NativeAOT (-p:PublishAot=true, needs the MSVC linker, ~1.3 MB); without it
+       Release builds use NativeAOT (-p:PublishAot=true, needs the MSVC linker, ~1.1 MB); without it
        the same code publishes as a trimmed single-file EXE (~10.7 MB). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
