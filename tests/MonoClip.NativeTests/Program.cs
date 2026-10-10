@@ -18,6 +18,41 @@ try {
         using var data=new ObsData().Set("monitor_id","DUMMY");var source=Obs.obs_source_create("monitor_capture","Properties fallback regression",data.Handle,IntPtr.Zero);
         try {var props=Obs.obs_source_properties(source);if(props==IntPtr.Zero)throw new Exception("monitor properties are missing");try{var list=Obs.obs_properties_get(props,"monitor_id");if(list==IntPtr.Zero||Obs.obs_property_list_item_count(list)<1)throw new Exception("monitor picker is empty");Console.WriteLine("PASS real monitor fallback properties API");}finally{Obs.obs_properties_destroy(props);}}finally{Obs.obs_source_release(source);}return 0;
     }
+    if(args.Contains("--share-remux")||args.Contains("--share-live")) {
+        // Synthetic game-fixture clip only: nothing from the real desktop leaves the PC.
+        var fixtureClips=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","GameVerificationClips");
+        var source=Directory.Exists(fixtureClips)?MonoClip.Core.ClipLibrary.LatestClip(Path.Combine(fixtureClips,"MonoClip.GameFixture")):null;
+        if(source==null)throw new Exception("run --game first to create a synthetic fixture clip");
+        if(args.Contains("--share-remux")) {
+            var target=Path.Combine(Path.GetTempPath(),"MonoClip-remux-"+Guid.NewGuid()+".mp4");
+            try {
+                MonoClip.Windows.Share.ClipRemux.ToFastStartMp4(source,target);
+                var bytes=File.ReadAllBytes(target);int moov=bytes.AsSpan().IndexOf("moov"u8),mdat=bytes.AsSpan().IndexOf("mdat"u8);
+                if(bytes.Length<10000||moov<0||mdat<0||moov>mdat)throw new Exception($"not a fast-start MP4: size={bytes.Length} moov={moov} mdat={mdat}");
+                if(File.Exists(target+".remux.mp4"))throw new Exception("intermediate remux file left behind");
+                var probe=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ffprobe",$"-v error -show_entries stream=codec_name -of csv=p=0 \"{target}\""){RedirectStandardOutput=true,UseShellExecute=false})!;var codecs=probe.StandardOutput.ReadToEnd().Split((char)10,StringSplitOptions.RemoveEmptyEntries|StringSplitOptions.TrimEntries);probe.WaitForExit();
+                if(codecs.FirstOrDefault()!="h264"||!codecs.Skip(1).All(c=>c=="aac")||codecs.Length<2)throw new Exception("unexpected streams: "+string.Join(",",codecs));
+                Console.WriteLine("PASS real libobs remux to fast-start MP4 "+new FileInfo(target).Length+" bytes streams="+string.Join(",",codecs));return 0;
+            } finally { if(File.Exists(target))File.Delete(target); }
+        }
+        using var share=new MonoClip.Windows.Share.ClipShare();var steps=new List<string>();
+        var task=share.ShareAsync(source,TimeSpan.FromMinutes(5),new Progress<string>(steps.Add));var clock=System.Diagnostics.Stopwatch.StartNew();
+        while(!task.IsCompleted&&clock.Elapsed.TotalSeconds<180){Application.DoEvents();Thread.Sleep(20);}
+        var info=task.GetAwaiter().GetResult();Console.WriteLine("INFO "+string.Join(" | ",steps)+" | "+info.Url);
+        if(!info.Url.StartsWith("https://")||!info.Url.Contains(".trycloudflare.com/")||(info.ExpiresAt-DateTimeOffset.Now).TotalMinutes is <4.9 or >5.01)throw new Exception("unexpected share "+info);
+        var local=Directory.EnumerateFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","share"),"*.mp4").Single();var expected=File.ReadAllBytes(local);
+        using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(60)};
+        var got=http.GetAsync(info.Url).GetAwaiter().GetResult();var body=got.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        if((int)got.StatusCode!=200||got.Content.Headers.ContentType?.MediaType!="video/mp4"||!body.SequenceEqual(expected)){var tun=(MonoClip.Windows.Share.CloudflaredTunnel?)typeof(MonoClip.Windows.Share.ClipShare).GetField("tunnel",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(share);throw new Exception($"public link did not return the clip: {(int)got.StatusCode} {body.Length}/{expected.Length} {System.Text.Encoding.ASCII.GetString(body.Take(40).ToArray())} | "+string.Join(" | ",tun?.RecentLog.TakeLast(8)??["no tunnel"]));}
+        var range=new HttpRequestMessage(HttpMethod.Get,info.Url);range.Headers.Range=new(0,1023);var part=http.Send(range);if((int)part.StatusCode!=206)throw new Exception("range through tunnel: "+(int)part.StatusCode);
+        var guess=http.GetAsync(info.Url.Replace(info.Url.Split('/')[3],SharePolicyToken())).GetAwaiter().GetResult();if((int)guess.StatusCode!=404)throw new Exception("wrong token served: "+(int)guess.StatusCode);
+        share.Stop();Application.DoEvents();
+        if(share.Current!=null||File.Exists(local))throw new Exception("stop left the share or its copy behind");
+        Thread.Sleep(3000);int after;try{after=(int)http.GetAsync(info.Url).GetAwaiter().GetResult().StatusCode;}catch(HttpRequestException){after=-1;}
+        if(after==200)throw new Exception("link still serves the clip after stop");
+        Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, offline after stop (status {after})");return 0;
+        static string SharePolicyToken()=>MonoClip.Core.SharePolicy.NewToken();
+    }
     if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error")) return RegressionTests.Run(args);
     if(args.Contains("--game")) {
         var fixture=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../tests/MonoClip.GameFixture/bin/Release/net10.0-windows/MonoClip.GameFixture.exe"));
@@ -52,10 +87,11 @@ try {
         engine.Stop();if(engine.IsRunning)throw new Exception("stop did not stop");
         return 0;
     }
-    int logStart=File.Exists(ObsHost.LogPath)?File.ReadAllText(ObsHost.LogPath).Length:0;
+    static string ReadLog(){using var s=new FileStream(ObsHost.LogPath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);return new StreamReader(s).ReadToEnd();}
+    int logStart=File.Exists(ObsHost.LogPath)?ReadLog().Length:0;
     using var host = new ObsHost();
     host.Initialize(1920, 1080, 60);
-    Application.DoEvents();Thread.Sleep(300);if(File.ReadAllText(ObsHost.LogPath)[logStart..].Contains("source graphics-hook"))throw new Exception("game hook runtime asset resolution failed");
+    Application.DoEvents();Thread.Sleep(300);if(ReadLog()[logStart..].Contains("source graphics-hook"))throw new Exception("game hook runtime asset resolution failed");
     if (!host.Encoders.Contains("h264_texture_amf")) throw new Exception("AMD texture encoder not available");
     if (!host.Sources.Contains("monitor_capture")) throw new Exception("GPU monitor capture not available");
     if (!host.Sources.Contains("game_capture")) throw new Exception("Game capture not available");

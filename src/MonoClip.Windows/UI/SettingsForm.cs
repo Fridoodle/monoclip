@@ -11,6 +11,8 @@ public sealed class SettingsForm : Form
     readonly ComboBox resolution = new(), fps = new(), games = new(); readonly NumericUpDown duration = new(); readonly TextBox hotkey = new(), directory = new();
     readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new();
     readonly MonoSlider quality = new("Performance", "Ausgewogen", "Qualität"); readonly List<Control> advancedOnly = [];
+    readonly NumericUpDown shareMinutes = new(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new();
+    readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }; IClipSharer? sharer;
     readonly Label status = new(), target = new(), budget = new(), feedback = new(); readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton();
     readonly TableLayoutPanel table = new() { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(WidePadding, 18, WidePadding, 18) };
     readonly Panel scroll = new() { Dock = DockStyle.Fill, AutoScroll = true };
@@ -20,7 +22,7 @@ public sealed class SettingsForm : Form
     public SettingsForm(AppSettings settings, IClipEngine engine, Action<AppSettings> saveSettings, Action toggle, Action saveClip)
     {
         original = settings with { }; this.engine = engine; this.saveSettings = saveSettings; this.toggle = toggle; this.saveClip = saveClip;
-        Text = "MonoClip"; BackColor = Black; ForeColor = White; Font = new Font("Segoe UI", 10); AutoScaleMode = AutoScaleMode.Dpi; ShowIcon = false; StartPosition = FormStartPosition.CenterScreen;
+        Text = "MonoClip"; BackColor = Black; ForeColor = White; Font = new Font("Segoe UI", 10); AutoScaleMode = AutoScaleMode.Dpi; Icon = AppIcon(); StartPosition = FormStartPosition.CenterScreen;
         var area = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 1000);
         MinimumSize = new Size(Math.Min(Px(LogicalMinWidth), area.Width), Math.Min(Px(LogicalMinHeight), area.Height));
         Size = new Size(Math.Min(Px(LogicalWidth), area.Width), Math.Min(Px(LogicalHeight), area.Height - Px(70)));
@@ -34,11 +36,13 @@ public sealed class SettingsForm : Form
         Full(new Label { Text = "Der letzte Moment. Ohne offene Aufnahmeoberfläche.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 0, 0, 14) });
         status.AutoSize = true; status.Font = new Font("Segoe UI Semibold", 11); Full(status); target.AutoSize = true; target.ForeColor = Muted; Full(target);
         var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = new Padding(0, 10, 0, 4) };
-        StyleButton(toggleButton); toggleButton.Click += (_, _) => Run(toggle); StyleButton(clipButton); clipButton.Text = "Clip speichern"; clipButton.Click += (_, _) => Run(saveClip); actions.Controls.Add(toggleButton); actions.Controls.Add(clipButton); Full(actions);
+        StyleButton(toggleButton); toggleButton.Click += (_, _) => Run(toggle); StyleButton(clipButton); clipButton.Text = "Clip speichern"; clipButton.Click += (_, _) => Run(saveClip); actions.Controls.Add(toggleButton); actions.Controls.Add(clipButton);
+        StyleButton(shareButton); shareButton.AutoSizeMode = AutoSizeMode.GrowAndShrink; shareButton.Visible = false; actions.Controls.Add(shareButton); StyleButton(copyLinkButton); copyLinkButton.Text = "Link kopieren"; copyLinkButton.Visible = false; actions.Controls.Add(copyLinkButton); Full(actions);
+        shareStatus.AutoSize = true; shareStatus.ForeColor = Muted; shareStatus.Visible = false; shareStatus.Margin = new Padding(0, 2, 0, 4); Full(shareStatus); shareTicker.Tick += (_, _) => UpdateShareControls();
         Check(advanced, "Erweiterte Einstellungen", settings.AdvancedMode); advanced.Margin = new Padding(0, 10, 0, 0); advanced.CheckedChanged += (_, _) => { ApplyMode(); Run(() => { var next = original with { AdvancedMode = advanced.Checked }; saveSettings(next); original = next; }); };
         Section("AUFNAHME");
-        StyleCombo(resolution); resolution.Items.AddRange(new object[] { "1280 × 720", "1920 × 1080", "2560 × 1440", "3840 × 2160" }); resolution.SelectedIndex = settings.Width switch { 1280 => 0, 1920 => 1, 2560 => 2, _ => 3 }; Row("Auflösung", resolution);
-        StyleCombo(fps); fps.Items.AddRange(new object[] { 30, 60, 120 }); fps.SelectedItem = settings.Fps; Row("Bilder pro Sekunde", fps);
+        StyleCombo(resolution); resolution.Items.AddRange(new object[] { "1280 × 720", "1920 × 1080", "2560 × 1440", "3840 × 2160" }); resolution.SelectedIndex = settings.Width switch { 1280 => 0, 1920 => 1, 2560 => 2, _ => 3 }; Row("Auflösung", resolution, true);
+        StyleCombo(fps); fps.Items.AddRange(new object[] { 30, 60, 120 }); fps.SelectedItem = settings.Fps; Row("Bilder pro Sekunde", fps, true);
         duration.Minimum = 5; duration.Maximum = 300; duration.Value = settings.ClipSeconds; duration.BackColor = Black; duration.ForeColor = White; duration.BorderStyle = BorderStyle.FixedSingle; Row("Cliplänge · Sekunden", duration);
         hotkey.ReadOnly = true; StyleText(hotkey); hotkey.Text = settings.Hotkey; hotkey.AccessibleName = "Clip-Tastenkombination";
         hotkey.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); hotkey.Text = new Hotkey(mods, e.KeyCode).ToString(); }; Row("Hotkey · drücken zum Ändern", hotkey);
@@ -53,6 +57,7 @@ public sealed class SettingsForm : Form
         var pathPanel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill }; pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); directory.Dock = DockStyle.Fill; directory.Margin = new Padding(0, 3, 6, 3); pathPanel.Controls.Add(directory, 0, 0);
         var browse = Button("…", () => { using var dialog = new FolderBrowserDialog { InitialDirectory = directory.Text, Description = "Ordner für lokale Clips" }; if (dialog.ShowDialog(this) == DialogResult.OK) directory.Text = dialog.SelectedPath; }); browse.MinimumSize = new Size(Px(42), Px(30)); browse.Margin = Padding.Empty; pathPanel.Controls.Add(browse, 1, 0); Row("Speicherordner", pathPanel);
         StyleCombo(games); games.Items.Add("Alle Clips"); games.SelectedIndex = 0; Row("Nach Spiel", games, true);
+        shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.Value = settings.ShareMinutes; shareMinutes.BackColor = Black; shareMinutes.ForeColor = White; shareMinutes.BorderStyle = BorderStyle.FixedSingle; shareMinutes.AccessibleName = "Teilen-Dauer in Minuten"; Row("Link teilen · Minuten online", shareMinutes, true);
         var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Ordner öffnen", () => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory)))); var refresh = Button("Liste aktualisieren", RefreshGames); libraryActions.Controls.Add(refresh); advancedOnly.Add(refresh); Full(libraryActions);
         feedback.AutoSize = true; feedback.ForeColor = Muted; feedback.Margin = new Padding(0, 8, 0, 0); Full(feedback);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
@@ -148,7 +153,7 @@ public sealed class SettingsForm : Form
     }
     void Section(string text, bool advancedOnly = false) { Full(new Label { Text = text, AutoSize = true, ForeColor = Muted, Font = new Font("Segoe UI Semibold", 9), Margin = new Padding(0, 19, 0, 7) }, advancedOnly); }
     void Check(CheckBox box, string text, bool value, bool advancedOnly = false) { box.FlatStyle = FlatStyle.Flat; box.FlatAppearance.BorderColor = Muted; box.FlatAppearance.CheckedBackColor = Black; box.Text = text; box.Checked = value; box.AutoSize = true; box.Margin = new Padding(0, 4, 0, 4); Full(box, advancedOnly); }
-    // Simple mode keeps resolution, FPS, length, hotkey, autostart and folder; the rest is advanced.
+    // Simple mode keeps clip length, hotkey, autostart and folder; the rest is advanced.
     void ApplyMode() { table.SuspendLayout(); foreach (var control in advancedOnly) control.Visible = advanced.Checked; table.ResumeLayout(); UpdateBudget(); }
     static void StyleCombo(ComboBox c)
     {
@@ -158,7 +163,7 @@ public sealed class SettingsForm : Form
     static void StyleText(TextBox t) { t.BackColor = Color.FromArgb(24, 24, 24); t.ForeColor = White; t.BorderStyle = BorderStyle.FixedSingle; }
     void StyleButton(Button b) { b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Line; b.BackColor = Black; b.ForeColor = White; b.AutoSize = true; b.Padding = new Padding(9, 4, 9, 4); b.MinimumSize = new Size(Px(100), Px(34)); b.Cursor = Cursors.Hand; b.UseVisualStyleBackColor = false; }
     Button Button(string text, Action action) { var b = new MonoButton { Text = text }; StyleButton(b); b.Click += (_, _) => action(); return b; }
-    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked }; s.Validate(); return s; }
+    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked, ShareMinutes = (int)shareMinutes.Value }; s.Validate(); return s; }
     void UpdateBudget()
     {
         if (fps.SelectedItem == null) return; var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) };
@@ -169,11 +174,35 @@ public sealed class SettingsForm : Form
             : estimate;
     }
     internal static string FormatSize(double megabytes) => megabytes >= 1024 ? $"{megabytes / 1024:0.0} GB" : megabytes >= 10 ? $"{megabytes:0} MB" : $"{megabytes:0.0} MB";
-    public void UpdateStatus() { status.Text = (engine.IsRunning ? "●  " : "○  ") + engine.Status; target.Text = engine.CaptureTarget + "  /  " + engine.EncoderName; toggleButton.Text = engine.IsRunning ? "Puffer stoppen" : "Puffer starten"; clipButton.Enabled = engine.IsRunning; }
+    public void UpdateStatus() { status.Text = (engine.IsRunning ? "●  " : "○  ") + engine.Status; target.Text = engine.CaptureTarget + "  /  " + engine.EncoderName; toggleButton.Text = engine.IsRunning ? "Puffer stoppen" : "Puffer starten"; clipButton.Enabled = engine.IsRunning; UpdateShareControls(); }
+    // Called by the tray: sharing lives there so the menu and this window always show the same link.
+    public void AttachSharing(IClipSharer sharer, Action toggleShare, Action copyLink)
+    {
+        this.sharer = sharer; shareButton.Click += (_, _) => toggleShare(); copyLinkButton.Click += (_, _) => copyLink(); shareTicker.Start(); UpdateShareControls();
+    }
+    void UpdateShareControls()
+    {
+        if (sharer == null || IsDisposed) return;
+        shareButton.Visible = true;
+        if (sharer.IsStarting) { shareButton.Text = "Teilen abbrechen"; shareStatus.Text = "Link wird erstellt …"; }
+        else if (sharer.Current is { } c)
+        {
+            int left = Math.Max(1, (int)Math.Ceiling((c.ExpiresAt - DateTimeOffset.Now).TotalMinutes));
+            shareButton.Text = "Teilen beenden"; shareStatus.Text = $"Geteilt · noch {left} Min. online (bis {c.ExpiresAt:HH:mm} Uhr) · {new Uri(c.Url).Host}";
+        }
+        else { shareButton.Text = $"Letzten Clip teilen · {original.ShareMinutes} Min."; shareStatus.Text = ""; }
+        copyLinkButton.Visible = sharer.Current != null; shareStatus.Visible = shareStatus.Text.Length > 0;
+    }
+    static Icon? AppIcon()
+    {
+        // Embedded in the app; absent when the form is compiled into tests.
+        using var stream = typeof(SettingsForm).Assembly.GetManifestResourceStream("MonoClip.ico");
+        return stream == null ? null : new Icon(stream);
+    }
     public void Feedback(string text) { feedback.Text = text; }
     void Run(Action action) { try { action(); UpdateStatus(); } catch (Exception e) { Feedback(e.Message); } }
     void RefreshGames() { Run(() => { games.Items.Clear(); games.Items.Add("Alle Clips"); foreach (var g in ClipLibrary.GetGames(original.ClipsDirectory)) games.Items.Add(g); games.SelectedIndex = 0; }); }
-    protected override void Dispose(bool disposing) { if (disposing) engine.StatusChanged -= EngineStatus; base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { engine.StatusChanged -= EngineStatus; shareTicker.Dispose(); } base.Dispose(disposing); }
 
     // Window chrome: black caption bar instead of the light default. Attribute 20 (19 before Windows 10 20H1)
     // switches the title bar to dark mode; 34/35/36 set exact border/caption/text colors on Windows 11.

@@ -16,6 +16,10 @@ MonoClips eigener Quellcode: **GPL-2.0-or-later**, siehe [LICENSE](LICENSE). Das
 
 Upstream: https://github.com/dotnet/runtime und https://github.com/dotnet/winforms. AMD-/NVIDIA-Treiber sind nicht im Paket.
 
+## cloudflared (nur beim Teilen, nicht im ZIP)
+
+Für „Letzten Clip teilen“ lädt MonoClip beim ersten Teilen das unveränderte offizielle Programm **cloudflared 2026.9.3** (`cloudflared-windows-amd64.exe`) von https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3 und führt es nur aus, wenn der SHA256 `f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2` stimmt. cloudflared steht unter der **Apache License 2.0** (Cloudflare, Inc.); Quellcode im genannten Repository. Es ist nicht Teil des MonoClip-Pakets. Die Nutzung der Quick Tunnels (trycloudflare.com) unterliegt den Bedingungen von Cloudflare.
+
 ## Extern bezogene native Runtime
 
 - Version: **OBS Studio 32.2.2**, Windows x64.

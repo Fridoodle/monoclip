@@ -76,6 +76,9 @@ internal static class Obs
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool calldata_get_string(ref CallData data, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out IntPtr str);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool calldata_get_data(ref CallData data, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out byte value, nuint size);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void bfree(IntPtr ptr);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool media_remux_job_create(out IntPtr job, [MarshalAs(UnmanagedType.LPUTF8Str)] string input, [MarshalAs(UnmanagedType.LPUTF8Str)] string output);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool media_remux_job_process(IntPtr job, IntPtr callback, IntPtr data);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void media_remux_job_destroy(IntPtr job);
     internal static string Str(IntPtr p) => p == IntPtr.Zero ? "" : Marshal.PtrToStringUTF8(p) ?? "";
 }
 internal sealed class ObsData : IDisposable

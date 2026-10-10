@@ -122,11 +122,12 @@ internal static class Program
         Test("Simple mode hides advanced settings and advanced mode reveals quality slider",()=>{
             using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{Quality=MonoClip.Core.QualityPreset.Performance},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
             Control F(string name)=>(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
-            foreach(var name in new[]{"resolution","fps","duration","hotkey","autostart","directory"})if(!F(name).Visible)throw new Exception(name+" missing in simple mode");
-            foreach(var name in new[]{"quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games"})if(F(name).Visible)throw new Exception(name+" visible in simple mode");
+            foreach(var name in new[]{"duration","hotkey","autostart","directory"})if(!F(name).Visible)throw new Exception(name+" missing in simple mode");
+            foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes"})if(F(name).Visible)throw new Exception(name+" visible in simple mode");
             var budget=(Label)F("budget");if(!budget.Visible||!budget.Text.Contains("MB"))throw new Exception("estimated file size missing: "+budget.Text);
             ((CheckBox)F("advanced")).Checked=true;Application.DoEvents();
-            foreach(var name in new[]{"quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games"})if(!F(name).Visible)throw new Exception(name+" hidden in advanced mode");
+            foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes"})if(!F(name).Visible)throw new Exception(name+" hidden in advanced mode");
+            Equal(1920,form.ReadSettings().Width);Equal(60,form.ReadSettings().Fps);
             if(!budget.Text.Contains("Mbit/s"))throw new Exception("advanced estimate lacks bitrate: "+budget.Text);
             var slider=F("quality");Equal(MonoClip.Core.QualityPreset.Performance,form.ReadSettings().Quality);var before=budget.Text;
             slider.GetType().GetProperty("Value")!.SetValue(slider,2);Equal(MonoClip.Core.QualityPreset.Quality,form.ReadSettings().Quality);Equal(true,form.ReadSettings().AdvancedMode);if(budget.Text==before)throw new Exception("estimate ignores quality");
@@ -136,6 +137,44 @@ internal static class Program
         Test("Default launch starts the replay buffer",()=>{
             var dir=Path.Combine(Path.GetTempPath(),"MonoClip-ui-"+Guid.NewGuid());Directory.CreateDirectory(dir);var engine=new FakeEngine();
             try{using var ctx=new MonoClip.Windows.UI.TrayAppContext(engine,new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F9"},Path.Combine(dir,"settings.json"));if(!engine.IsRunning)throw new Exception("buffer not started by default");}finally{Directory.Delete(dir,true);}
+        });
+        Test("Tray shares the newest clip, copies the link and stops on demand",()=>{
+            var dir=Path.Combine(Path.GetTempPath(),"MonoClip-share-ui-"+Guid.NewGuid());Directory.CreateDirectory(Path.Combine(dir,"Game"));var clip=Path.Combine(dir,"Game","newest.mkv");File.WriteAllText(clip,"fixture");
+            try{var sharer=new FakeSharer();string? copied=null;
+                using(var plain=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F7",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"a.json"))){var t=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plain)!;if(t.ContextMenuStrip!.Items.Cast<ToolStripItem>().Any(i=>i.Text!.Contains("teilen")&&i.Available))throw new Exception("share item shown without a sharer");}
+                using var ctx=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F8",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"settings.json"),false,()=>{},sharer){CopyText=text=>copied=text};
+                var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var items=tray.ContextMenuStrip!.Items.Cast<ToolStripItem>().ToList();
+                var share=(ToolStripMenuItem)items.Single(i=>i.Text!.StartsWith("Letzten Clip teilen"));Equal("Letzten Clip teilen · 15 Min.",share.Text);if(items.IndexOf(share)<1||items[^1].Text!="Beenden")throw new Exception("share item misplaced");
+                share.PerformClick();Application.DoEvents();
+                Equal(clip,sharer.SharedClip);Equal(TimeSpan.FromMinutes(15),sharer.Duration);Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Teilen beenden · noch 15 Min."))throw new Exception("active share not shown: "+share.Text);
+                var again=(ToolStripMenuItem)items.Single(i=>i.Text=="Link erneut kopieren");copied=null;again.PerformClick();Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);
+                share.PerformClick();Application.DoEvents();Equal<object?>(null,sharer.Current);if(!share.Text!.StartsWith("Letzten Clip teilen"))throw new Exception("stopped share still shown");
+            }finally{Directory.Delete(dir,true);}
+        });
+        Test("Tray symbol is a black tile with a filled or hollow white dot",()=>{
+            foreach(var size in new[]{16,20,24,32}){
+                using var on=MonoClip.Windows.UI.TrayAppContext.MakeIcon(true,size);using var off=MonoClip.Windows.UI.TrayAppContext.MakeIcon(false,size);using var a=on.ToBitmap();using var b=off.ToBitmap();
+                Color P(Bitmap bmp,int x,int y)=>bmp.GetPixel(x,y);
+                // Tile: opaque and dark near the edges (corners stay rounded), white dot in the middle.
+                foreach(var (x,y) in new[]{(size/2,1),(1,size/2),(size-2,size/2),(size/2,size-2)})foreach(var bmp in new[]{a,b})if(P(bmp,x,y).A<200||P(bmp,x,y).R>60)throw new Exception($"no black tile at {x},{y} size {size}");
+                if(P(a,0,0).A>200)throw new Exception("tile corners not rounded");
+                var center=P(a,size/2,size/2);if(center.A<200||center.R<200)throw new Exception("recording dot not filled white");
+                if(P(b,size/2,size/2).R>60)throw new Exception("stopped symbol is not a ring");
+                bool ring=false;for(int x=0;x<size/2;x++)if(P(b,x,size/2).R>150)ring=true;if(!ring)throw new Exception("ring outline missing");
+            }
+        });
+        Test("Settings window shares, copies the link and shows remaining minutes",()=>{
+            var sharer=new FakeSharer();int toggles=0,copies=0;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{ShareMinutes=20},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
+            Control F(string name)=>(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            if(F("shareButton").Visible)throw new Exception("share button shown without sharing support");
+            form.AttachSharing(sharer,()=>toggles++,()=>copies++);var share=(Button)F("shareButton");var copy=(Button)F("copyLinkButton");
+            if(!share.Visible||share.Text!="Letzten Clip teilen · 20 Min."||copy.Visible)throw new Exception("idle share controls wrong: "+share.Text);
+            share.PerformClick();Equal(1,toggles);
+            sharer.ShareAsync("clip.mkv",TimeSpan.FromMinutes(20));form.UpdateStatus();
+            var status=(Label)F("shareStatus");if(!copy.Visible||share.Text!="Teilen beenden"||!status.Visible||!status.Text.Contains("noch 20 Min.")||!status.Text.Contains("fake-host.trycloudflare.com"))throw new Exception("active share not shown: "+status.Text);
+            copy.PerformClick();Equal(1,copies);
+            Equal(20,form.ReadSettings().ShareMinutes);((NumericUpDown)F("shareMinutes")).Value=30;Equal(30,form.ReadSettings().ShareMinutes);
+            form.Close();
         });
         Test("Advanced mode toggle persists immediately",()=>{
             MonoClip.Core.AppSettings? saved=null;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),s=>saved=s,()=>{},()=>{});
@@ -153,6 +192,19 @@ internal static class Program
                 while(selected==null&&clock.ElapsedMilliseconds<8000){Application.DoEvents();Thread.Sleep(200);foreach(dynamic w in shell.Windows()){try{if(string.Equals((string)w.Document.Folder.Self.Path,Path.GetDirectoryName(newest),StringComparison.OrdinalIgnoreCase)){foreach(dynamic item in w.Document.SelectedItems())selected=(string)item.Path;if(selected!=null)w.Quit();}}catch(Exception){}}}
                 Equal(newest,selected);
             }finally{Thread.Sleep(300);Directory.Delete(dir,true);}
+        });
+        // Opt-in visual check: renders the settings window (simple/advanced, sharing) and tray symbols to PNG.
+        if(args.Contains("--render"))Test("Render settings window and tray symbols",()=>{
+            var dir=args[Array.IndexOf(args,"--render")+1];Directory.CreateDirectory(dir);
+            foreach(var advanced in new[]{false,true}){
+                var sharer=new FakeSharer();using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{AdvancedMode=advanced},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();
+                form.AttachSharing(sharer,()=>{},()=>{});if(advanced){sharer.ShareAsync("c.mkv",TimeSpan.FromMinutes(15));form.UpdateStatus();}
+                form.ClientSize=new Size(form.ClientSize.Width,advanced?1500:820);Application.DoEvents();
+                using var image=new Bitmap(form.Width,form.Height);form.DrawToBitmap(image,new Rectangle(Point.Empty,form.Size));image.Save(Path.Combine(dir,advanced?"settings-advanced.png":"settings-simple.png"));form.Close();
+            }
+            using var sheet=new Bitmap(200,80);using(var g=Graphics.FromImage(sheet)){g.FillRectangle(new SolidBrush(Color.FromArgb(32,32,32)),0,0,100,80);g.FillRectangle(new SolidBrush(Color.FromArgb(238,238,238)),100,0,100,80);
+                int x=8;for(int side=0;side<2;side++){foreach(var active in new[]{true,false}){using var icon=MonoClip.Windows.UI.TrayAppContext.MakeIcon(active,32);g.DrawIcon(icon,x,8);using var small=MonoClip.Windows.UI.TrayAppContext.MakeIcon(active,16);g.DrawIcon(small,x+8,52);x+=46;}x=108;}}
+            sheet.Save(Path.Combine(dir,"tray.png"));
         });
         if(args.Contains("--play-beep"))Test("Real cached beep playback uses Windows audio successfully",()=>{
             using var sound=new MonoClip.Windows.UI.ClipBeepSound();sound.Play();Thread.Sleep(150);

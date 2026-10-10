@@ -1,5 +1,18 @@
 # Änderungen
 
+## 0.1.7 Beta
+
+- Tray → **Letzten Clip teilen · 15 Min.**: verlustfreie MP4-Kopie mit vorgezogenem Index, Bereitstellung nur auf 127.0.0.1 und ein Cloudflare-Quick-Tunnel. Link landet in der Zwischenablage; ohne Portfreigabe, Konto oder Adminrechte, auch hinter DS-Lite/CGNAT.
+- Nach 15 Minuten, per „Teilen beenden“ oder beim Beenden werden Tunnel, Server und Kopie entfernt; ein Job-Objekt beendet cloudflared auch bei einem Absturz. Maximal 6 parallele Verbindungen.
+- cloudflared 2026.9.3 wird erst beim ersten Teilen von GitHub geladen und gegen einen festen SHA256 geprüft.
+- Der Link wird vor dem Kopieren über IPv4- und IPv6-Edge geprüft, ohne den neuen Hostnamen vorzeitig im Windows-DNS-Cache als „nicht vorhanden“ zu speichern.
+- Teilen auch im Einstellungsfenster neben „Puffer stoppen“/„Clip speichern“, mit „Link kopieren“ und Restzeit; Dauer in den erweiterten Einstellungen 5–30 Minuten (Standard 15). Benachrichtigungen nennen Wartezeit, Ablaufzeit und Ende.
+- Eigenes App-Icon für EXE, Taskleiste und Fenster. Tray-Symbol ohne Eckklammern: schwarze Kachel mit Punkt (aufnehmend) bzw. Ring (gestoppt).
+- Auflösung und Bildrate sind jetzt erweiterte Einstellungen (Standard 1080p60).
+- Aufgeräumter Programmordner: nur noch `MonoClip.exe` (Starter, ca. 0,15 s) sowie `app\` und `info\` statt rund 300 losen Dateien. Autostart und `--settings` funktionieren unverändert.
+- Deutlich kleiner: Download 71 → ca. 49 MB, entpackt 298 → 150 Dateien. Nie referenzierte .NET-Assemblies und Debugger-/Crashdump-Dateien entfallen (ohne Code aus benutzten Assemblies zu schneiden); unbenutzte OBS-Teile (WebRTC, Lua, OpenGL, QSV-Test, Streaming-Plugin `obs-outputs`) werden nicht mehr ausgeliefert. Release-Starter per NativeAOT (ca. 1,3 MB).
+- Effizienter im Betrieb: Einstellungen per JSON-Source-Generator, Fenster-/Monitor-Infos werden pro Fenster zwischengespeichert statt viermal pro Sekunde neu abgefragt, OBS-Log mit dauerhaft geöffnetem Writer, kein Hintergrund-GC-Thread.
+
 ## 0.1.6 Beta
 
 - Aufnahme folgt dem Fenster unter der Maus: gehooktes Spiel, sonst nur das jeweilige App-Fenster (WGC), über Desktop/Taskleiste der Monitor unter der Maus. Ein Spiel im Hintergrund landet nicht mehr im Clip, wenn man z. B. in Discord ist.

@@ -2,12 +2,16 @@
 
 Everything is inside: the self-contained .NET app and the OBS capture runtime. No setup script,
 no second download, no installer and no administrator rights.
+
+Layout: MonoClip.exe (single-file starter) plus folders only. The app runs from app\ because OBS
+finds its helper programs next to the running EXE; notices and licenses live in info\.
 """
 import argparse, hashlib, json, pathlib, re, shutil, zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-REQUIRED = ["MonoClip.exe", "obs.dll", "obs-ffmpeg-mux.exe", "libobs-d3d11.dll", "runtime/data/libobs/default.effect",
-            "runtime/obs-plugins/64bit/win-capture.dll", "runtime/data/obs-plugins/win-capture/graphics-hook64.dll"]
+APP = ["MonoClip.exe", "obs.dll", "obs-ffmpeg-mux.exe", "obs-amf-test.exe", "libobs-d3d11.dll", "runtime/data/libobs/default.effect",
+       "runtime/obs-plugins/64bit/win-capture.dll", "runtime/data/obs-plugins/win-capture/graphics-hook64.dll"]
+REQUIRED = ["MonoClip.exe"] + ["app/" + name for name in APP]
 FORBIDDEN = {"install-runtime.ps1", "Runtime einrichten.cmd"}
 
 
@@ -18,7 +22,7 @@ def project_version() -> str:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--app", type=pathlib.Path, default=ROOT / "dist/MonoClip", help="dotnet publish output")
+    p.add_argument("--app", type=pathlib.Path, default=ROOT / "dist/MonoClip", help="folder with the starter MonoClip.exe and the published app in app/")
     p.add_argument("--version", default=None, help="defaults to <Version> of MonoClip.Windows.csproj")
     p.add_argument("--out", type=pathlib.Path, default=ROOT / "dist")
     a = p.parse_args()
@@ -29,15 +33,19 @@ def main() -> None:
     missing = [name for name in REQUIRED if not (app / name).is_file()]
     if missing:
         raise SystemExit("Publish output is not a complete portable app (run tools/prepare-runtime.py first). Missing: " + ", ".join(missing))
+    # The point of the layout: a user opening the folder sees MonoClip.exe and folders, nothing else.
+    loose = [f.name for f in app.iterdir() if f.is_file() and f.name != "MonoClip.exe" and f.suffix != ".pdb"]
+    if loose:
+        raise SystemExit("Only MonoClip.exe may sit in the folder root, found: " + ", ".join(sorted(loose)))
 
     # Notices travel with the binaries.
     runtime = ROOT / "runtime"
-    extras = {name: ROOT / name for name in ["README.md", "CHANGELOG.md", "THIRD-PARTY.md", "LICENSE"]}
-    extras["OBS-ORIGIN.json"] = runtime / "OBS-ORIGIN.json"
-    extras["licenses/OBS-LICENSE-gplv2.txt"] = runtime / "OBS-LICENSE-gplv2.txt"
+    extras = {"info/" + name: ROOT / name for name in ["README.md", "CHANGELOG.md", "THIRD-PARTY.md", "LICENSE"]}
+    extras["info/OBS-ORIGIN.json"] = runtime / "OBS-ORIGIN.json"
+    extras["info/licenses/OBS-LICENSE-gplv2.txt"] = runtime / "OBS-LICENSE-gplv2.txt"
     for file in (ROOT / "licenses").rglob("*"):
         if file.is_file() and "native" not in file.relative_to(ROOT / "licenses").parts:
-            extras["licenses/" + file.relative_to(ROOT / "licenses").as_posix()] = file
+            extras["info/licenses/" + file.relative_to(ROOT / "licenses").as_posix()] = file
     for name, source in extras.items():
         if not source.is_file():
             raise SystemExit("Missing notice file: " + str(source))

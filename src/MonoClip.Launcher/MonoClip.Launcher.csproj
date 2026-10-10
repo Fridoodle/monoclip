@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Starter in the portable folder root. OBS finds its helper programs (obs-ffmpeg-mux.exe, encoder
+       tests) next to the running EXE, so the real app stays in app\ with all of its files.
+       Release builds use NativeAOT (-p:PublishAot=true, needs the MSVC linker, ~1.3 MB); without it
+       the same code publishes as a trimmed single-file EXE (~10.7 MB). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>MonoClip</AssemblyName>
+    <ApplicationIcon>../MonoClip.Windows/MonoClip.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Nothing below is used by a starter that only calls CreateProcess. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <NullabilityInfoContextSupport>false</NullabilityInfoContextSupport>
+    <StartupHookSupport>false</StartupHookSupport>
+    <_AggressiveAttributeTrimming>true</_AggressiveAttributeTrimming>
+    <TieredPGO>false</TieredPGO>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MonoClip.Core/MonoClip.Core.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(PublishAot)' != 'true'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+</Project>
