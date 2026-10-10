@@ -20,14 +20,16 @@
 
 ## Download und Start
 
-Aktuelle Pakete: **[GitHub Releases](https://github.com/Fridoodle/monoclip/releases)**.
+Aktuelle Version: **[GitHub Releases](https://github.com/Fridoodle/monoclip/releases)** → `MonoClip-…-win-x64-portable.zip`.
 
-1. MonoClip vor einem Update beenden.
-2. Das komplette Paket in einen neuen Ordner entpacken. Keine einzelnen EXE-/DLL-Dateien verschiedener Versionen mischen.
-3. Falls dem Paket **Runtime einrichten.cmd** beiliegt, diese einmal ausführen. Sie lädt die unveränderten OBS-Bibliotheken direkt vom offiziellen Release und prüft deren SHA256. Danach ist für die Aufnahme keine Internetverbindung nötig.
-4. `MonoClip.exe` starten. Bei einer frischen Konfiguration startet die App nur im Tray und mit gestopptem Puffer.
-5. Rechtsklick auf das Schwarz-Weiß-Symbol → **Puffer starten** oder **Einstellungen**.
-6. Für einen vollständigen Clip die eingestellte Cliplänge plus wenige Sekunden warten, dann den Hotkey drücken.
+Portabel, **ein einziger Download**, keine Installation, **keine Adminrechte**: Die Aufnahme-Runtime (unveränderte OBS-Bibliotheken) und .NET sind bereits enthalten. Kein Setup-Skript, kein zweiter Download, keine Internetverbindung beim Start.
+
+1. ZIP in einen beliebigen Ordner entpacken, z. B. `Dokumente\MonoClip` oder einen USB-Stick. Für Updates MonoClip vorher beenden und die neue Version in einen neuen Ordner entpacken.
+2. `MonoClip.exe` starten. Bei einer frischen Konfiguration startet die App nur im Tray und mit gestopptem Puffer.
+3. Rechtsklick auf das Schwarz-Weiß-Symbol → **Puffer starten** oder **Einstellungen**.
+4. Für einen vollständigen Clip die eingestellte Cliplänge plus wenige Sekunden warten, dann den Hotkey drücken.
+
+Deinstallieren: Ordner löschen (vorher ggf. „Mit Windows starten“ ausschalten). Einstellungen und Logs liegen unter `%LOCALAPPDATA%\MonoClip`.
 
 Fenster schließen/minimieren versteckt die Einstellungen. Wirklich beenden: **Tray → Beenden**. `MonoClip.exe --settings` zeigt beim ersten Start direkt die Einstellungen. Eine zweite Instanz wird verhindert.
 
@@ -74,7 +76,7 @@ MKV lässt sich etwa mit VLC abspielen. Manche Upload-Dienste/Editoren verlangen
 - **Schwarzes Bild:** Geschützte Inhalte, Sicherheitsdialoge und manche Spiel-/Treiberkombinationen sind nicht aufnehmbar. Treiber aktualisieren und Borderless testen; keine Schutzfunktionen deaktivieren.
 - **`.pending`:** Bei Unterbrechungen/Exportfehlern bleiben vorhandene Aufnahmen hier erhalten. Sie werden nicht automatisch gelöscht. Ein nie gespeicherter RAM-Puffer geht beim Beenden verloren.
 - **Hotkey belegt:** Eine andere Kombination wählen. Seit 0.1.3 ergänzt Raw Input die normale Windows-Zustellung für Spiele, die Hotkey-Meldungen verschlucken. Die App bleibt ohne Adminrechte; Anti-Cheat-Einschränkungen werden nicht umgangen. Beim Ändern der Kombination im sichtbaren Eingabefeld wird kein Clip ausgelöst.
-- **Fehlende DLL / EntryPoint:** Vollständiges aktuelles Paket verwenden, Runtime einrichten und keine fremden OBS-DLLs darüberkopieren.
+- **Fehlende DLL / EntryPoint / „Aufnahme-Runtime unvollständig“:** Das komplette aktuelle ZIP in einen neuen Ordner entpacken, nicht nur einzelne Dateien kopieren, und keine fremden OBS-DLLs darüberkopieren. Manche Virenscanner verschieben einzelne DLLs in Quarantäne.
 - **Mikrofon nicht hörbar:** Standardgerät, Berechtigung und Lautstärke prüfen; im Player die richtige Spur auswählen.
 
 Logs: `%LOCALAPPDATA%\MonoClip`. Sie können Geräte-/Prozessangaben enthalten; vor dem Teilen persönliche Daten prüfen. Freier Speicher wird vor Aufnahmebeginn geprüft, aber nicht dauerhaft garantiert.
@@ -95,7 +97,9 @@ cd monoclip
 .\build.ps1
 ```
 
-Ergebnis: `dist/MonoClip/MonoClip.exe`. Das Paket ist selbstenthalten; zum Starten wird kein separat installiertes .NET-SDK benötigt.
+Ergebnis: `dist/MonoClip/MonoClip.exe` und der fertige portable Download `dist/MonoClip-<Version>-win-x64-portable.zip`. `tools/prepare-runtime.py` lädt dafür einmalig das gepinnte offizielle OBS-Release (SHA256-geprüft) und übernimmt nur die benötigten Module. Das Paket ist selbstenthalten; zum Starten wird kein separat installiertes .NET benötigt.
+
+Releases: Ein Tag `v<Version>` (passend zu `<Version>` in `MonoClip.Windows.csproj`) baut das ZIP in der Windows-CI, prüft einen echten Start aus einem frisch entpackten Ordner und veröffentlicht ZIP, `SHA256SUMS.txt` und das offizielle OBS-Quellarchiv als GitHub-Release.
 
 ### Tests
 

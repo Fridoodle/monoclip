@@ -2,9 +2,9 @@
 
 ## GitHub-Download
 
-Das öffentliche Setup-ZIP enthält **MonoClip und die selbstenthaltene .NET-Runtime**, aber **keine OBS-, FFmpeg-, x264-, Capture-Plugin- oder Qt-Binärdateien**. `Runtime einrichten.cmd` / `install-runtime.ps1` lädt die benötigten unveränderten Bibliotheken direkt vom offiziellen OBS-Release für den jeweiligen Benutzer und prüft das komplette Archiv vor dem Entpacken gegen den gepinnten SHA256-Wert.
+Das portable ZIP enthält **MonoClip, die selbstenthaltene .NET-Runtime und eine Teilmenge unveränderter Binärdateien aus dem offiziellen OBS-Studio-32.2.2-Release** (libobs, Capture-/Audio-/Encoder-/Mux-Module sowie die damit ausgelieferten FFmpeg-, x264- und weiteren Bibliotheken). Qt, Frontend, Browser-Plugin und Python-/Lua-Integration sind nicht enthalten. Das OBS-Archiv wird beim Bauen gegen den gepinnten SHA256-Wert geprüft; Herkunft und Prüfsumme stehen im Paket in `OBS-ORIGIN.json`, die OBS-Lizenz in `licenses/OBS-LICENSE-gplv2.txt`.
 
-Es wird kein vollständiger lizenzrechtlicher Audit oder vollständiges Corresponding-Source-Paket aller nativen OBS-Abhängigkeiten behauptet. Lokale Recherche-/Teilarchive sind nicht Bestandteil des öffentlichen Repositories. Ein späteres Paket mit mitgelieferten nativen Binärdateien benötigt einen gesonderten vollständigen Quellen-/Hinweissatz.
+Jedes Release führt neben dem ZIP das offizielle, unveränderte OBS-Quellarchiv (`OBS-Studio-32.2.2-Sources.tar.gz`) als Asset. Die Quellen der übrigen nativen Abhängigkeiten sind über die unten genannten gepinnten Upstream-Rezepte referenziert. Es wird kein vollständiger lizenzrechtlicher Audit aller nativen Abhängigkeiten behauptet.
 
 ## MonoClip
 
@@ -28,8 +28,8 @@ Upstream: https://github.com/dotnet/runtime und https://github.com/dotnet/winfor
 
 OBS/libobs und Plugins sind grundsätzlich GPL-2.0-or-later. Der konkrete mit OBS veröffentlichte **FFmpeg-Build meldet GPL-3.0-or-later** und Version `n8.1.2`; seine Lizenz darf nicht pauschal als LGPL oder GPLv2-only beschrieben werden. FFmpeg-Quellpin: https://github.com/FFmpeg/FFmpeg/tree/38b88335f99e76ed89ff3c93f877fdefce736c13. Weitere Abhängigkeiten behalten ihre eigenen ursprünglichen Bedingungen.
 
-Das Setup verwendet nur die benötigten Capture-/Audio-/Mux-/Encoder-Module und Daten. Frontend, Qt, Browser-Plugin und Python-/Lua-Integrationen werden nicht installiert. Es verändert keine Upstream-Binärdateien. Einstellungen oder Clips werden nicht an OBS oder GitHub übertragen.
+Das Paket enthält nur die benötigten Capture-/Audio-/Mux-/Encoder-Module und Daten. Frontend, Qt, Browser-Plugin und Python-/Lua-Integrationen sind nicht enthalten. Upstream-Binärdateien werden nicht verändert. Einstellungen oder Clips werden nicht an OBS oder GitHub übertragen.
 
 ## Build und Weitergabe
 
-`build.ps1` lädt die Runtime ebenfalls vom offiziellen Upstream für den lokalen Build. Ein lokal gebautes Komplettpaket ist nicht automatisch eine vollständig geprüfte native Binärdistribution. Wer OBS- oder andere native Bibliotheken selbst weiterverbreitet, muss deren Lizenz-, Hinweis- und vollständige Quellenpflichten gesondert erfüllen. Die oben genannten Herkunftslinks sind kein vollständiges schriftliches Quellenangebot.
+`build.ps1` bzw. `tools/prepare-runtime.py` lädt die Runtime vom offiziellen Upstream und übernimmt nur die benötigten Dateien. Wer ein eigenes Paket mit OBS- oder anderen nativen Bibliotheken weiterverbreitet, muss deren Lizenz-, Hinweis- und Quellenpflichten selbst erfüllen. Die oben genannten Herkunftslinks sind kein vollständiges schriftliches Quellenangebot.

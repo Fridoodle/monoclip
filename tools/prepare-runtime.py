@@ -1,25 +1,78 @@
-import urllib.request, json, hashlib, zipfile, pathlib, shutil
-ROOT=pathlib.Path(__file__).resolve().parents[1]
-zip_path=pathlib.Path.home()/"AppData/Local/Temp/monoclip-obs.zip"
-release=json.load(urllib.request.urlopen("https://api.github.com/repos/obsproject/obs-studio/releases/tags/32.2.2"))
-asset=next(x for x in release["assets"] if x["name"] == "OBS-Studio-32.2.2-Windows-x64.zip")
-if not zip_path.exists():
-    urllib.request.urlretrieve(asset["browser_download_url"], zip_path)
-digest=asset.get("digest")
-sha=hashlib.sha256(zip_path.read_bytes()).hexdigest()
-if digest and digest != "sha256:"+sha: raise SystemExit("OBS checksum mismatch")
-print("OBS archive SHA256",sha,"matches",digest)
-modules={"win-capture", "win-wasapi", "obs-ffmpeg", "obs-outputs", "obs-nvenc"}
-rt=ROOT/"runtime"
-for stale in rt.rglob("*.pdb"): stale.unlink()
-with zipfile.ZipFile(zip_path) as z:
-    for f in z.infolist():
-        name=f.filename
-        include=(name.startswith("bin/64bit/") and not any(x in name.lower() for x in ["qt6", "obs64.exe", "obspython", "obslua", "python", "imageformats/", "platforms/", "styles/", "sqldrivers/", "tls/", ".pdb"])) or name.startswith("data/libobs/") or any(name.startswith("data/obs-plugins/"+m+"/") or name=="obs-plugins/64bit/"+m+".dll" for m in modules)
-        if include and not f.is_dir() and not name.lower().endswith(".pdb"):
-            dest=rt/name
-            dest.parent.mkdir(parents=True,exist_ok=True)
-            with z.open(f) as source, dest.open("wb") as out: shutil.copyfileobj(source,out)
-(rt/"OBS-ORIGIN.json").write_text(json.dumps({"version":"32.2.2","url":asset["browser_download_url"],"sha256":sha,"modules":sorted(modules)},indent=2))
-print("Runtime files", sum(1 for p in rt.rglob("*") if p.is_file()))
-print("Runtime bytes", sum(p.stat().st_size for p in rt.rglob("*") if p.is_file()))
+"""Download the pinned official OBS release and extract only the runtime parts MonoClip needs into runtime/.
+
+The archive is verified against a pinned SHA256 before anything is extracted. The result is bundled
+into the portable package by RuntimeContent.props, so end users never download anything themselves.
+"""
+import hashlib, json, os, pathlib, shutil, tempfile, urllib.request, zipfile
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+VERSION = "32.2.2"
+SHA256 = "4d6e40e3ab155f56b30de517380566a206d74b63cdf5ad49aa596924768f97e1"
+URL = f"https://github.com/obsproject/obs-studio/releases/download/{VERSION}/OBS-Studio-{VERSION}-Windows-x64.zip"
+MODULES = {"win-capture", "win-wasapi", "obs-ffmpeg", "obs-outputs", "obs-nvenc"}
+# Frontend, scripting and UI-toolkit files are not used by libobs-only hosting.
+SKIP = ["qt6", "obs64.exe", "obspython", "obslua", "python", "imageformats/", "platforms/", "styles/", "sqldrivers/", "tls/"]
+# Module texts fall back to en-US; MonoClip's UI is German. Other locales only add files.
+LOCALES = {"en-US.ini", "de-DE.ini"}
+REQUIRED = ["bin/64bit/obs.dll", "bin/64bit/obs-ffmpeg-mux.exe", "bin/64bit/libobs-d3d11.dll", "data/libobs/default.effect", "obs-plugins/64bit/win-capture.dll"]
+
+
+def wanted(name: str) -> bool:
+    lower = name.lower()
+    if lower.endswith(".pdb") or name.endswith("/"):
+        return False
+    if "/locale/" in name and pathlib.PurePosixPath(name).name not in LOCALES:
+        return False
+    if name.startswith("bin/64bit/"):
+        return "/" not in name[len("bin/64bit/"):] and not any(x in lower for x in SKIP)
+    if name.startswith("data/libobs/"):
+        return True
+    return any(name.startswith(f"data/obs-plugins/{m}/") or name == f"obs-plugins/64bit/{m}.dll" for m in MODULES)
+
+
+def archive() -> pathlib.Path:
+    cache = pathlib.Path(os.environ.get("MONOCLIP_OBS_CACHE", tempfile.gettempdir())) / f"monoclip-obs-{VERSION}.zip"
+    if cache.exists() and hashlib.sha256(cache.read_bytes()).hexdigest() != SHA256:
+        cache.unlink()  # stale or truncated download
+    if not cache.exists():
+        partial = cache.with_suffix(".part")
+        print("Downloading", URL)
+        urllib.request.urlretrieve(URL, partial)
+        partial.replace(cache)
+    sha = hashlib.sha256(cache.read_bytes()).hexdigest()
+    if sha != SHA256:
+        cache.unlink()
+        raise SystemExit(f"OBS checksum mismatch: {sha}")
+    print("OBS archive SHA256 verified:", sha)
+    return cache
+
+
+def main() -> None:
+    zip_path = archive()
+    rt = ROOT / "runtime"
+    if rt.exists():
+        shutil.rmtree(rt)  # never ship leftovers from an older runtime
+    count = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for entry in z.infolist():
+            if entry.is_dir() or not wanted(entry.filename):
+                continue
+            dest = (rt / entry.filename).resolve()
+            if not dest.is_relative_to(rt.resolve()):
+                raise SystemExit("Unsafe archive path: " + entry.filename)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(entry) as source, dest.open("wb") as out:
+                shutil.copyfileobj(source, out)
+            count += 1
+        license_entry = "data/obs-studio/license/gplv2.txt"
+        (rt / "OBS-LICENSE-gplv2.txt").write_bytes(z.read(license_entry))
+    missing = [name for name in REQUIRED if not (rt / name).is_file()]
+    if missing:
+        raise SystemExit("Runtime incomplete: " + ", ".join(missing))
+    (rt / "OBS-ORIGIN.json").write_text(json.dumps({"version": VERSION, "url": URL, "sha256": SHA256, "modules": sorted(MODULES), "files": count}, indent=2))
+    print("Runtime files", count)
+    print("Runtime bytes", sum(p.stat().st_size for p in rt.rglob("*") if p.is_file()))
+
+
+if __name__ == "__main__":
+    main()

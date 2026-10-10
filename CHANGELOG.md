@@ -1,5 +1,14 @@
 # Änderungen
 
+## 0.1.5 Beta
+
+- **Portabler Ein-Datei-Download:** Ein ZIP enthält App, .NET und die Aufnahme-Runtime. Entpacken, `MonoClip.exe` starten – kein `Runtime einrichten.cmd`, kein zweiter Download, keine Installation und keine Adminrechte.
+- Runtime schlanker: nur benötigte OBS-Module, Sprachdateien nur Deutsch/Englisch (73 statt 388 Runtime-Dateien), keine .NET-Sprachordner außer Deutsch/Englisch.
+- Klare Meldung, falls Dateien der Aufnahme-Runtime fehlen (z. B. unvollständig entpackt oder von einem Virenscanner entfernt).
+- Einstellungsfenster funktioniert in jeder Größe: Texte umbrechen statt abgeschnitten zu werden, in schmalen Fenstern stehen Beschriftung und Feld untereinander, Mindestgröße 380 × 320, das Fenster öffnet nie größer als der Bildschirm und skaliert mit der Windows-Anzeigeskalierung.
+- Schwarze Titelleiste statt weißer (Windows 11 exakt schwarz, Windows 10 dunkel) und dunkle Scrollleiste.
+- CI baut das portable ZIP, prüft alle libobs-Exports gegen die gebündelte DLL und startet die App aus einem frisch entpackten Ordner mit Leerzeichen und Klammern im Pfad. Tags `v*` veröffentlichen das Release automatisch.
+
 ## 0.1.4 Beta
 
 - CMD-Launcher übergibt keinen fehlerhaft gequoteten Ordnerpfad mehr; PowerShell verwendet den eigenen Skriptordner.
