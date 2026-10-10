@@ -21,6 +21,8 @@ public sealed record AppSettings
     public bool StartBufferOnLaunch { get; set; } = true;
     public bool AdvancedMode { get; set; }
     public int ShareMinutes { get; set; } = SharePolicy.DefaultMinutes;
+    // Share every new clip right after saving and copy the link (advanced, off by default).
+    public bool AutoShare { get; set; }
     public string MicrophoneDevice { get; set; } = "default";
     public string DesktopDevice { get; set; } = "default";
     public void Validate()

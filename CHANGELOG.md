@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.1.8 Beta
+
+- **Neue Clips automatisch teilen** (erweitert, standardmäßig aus): nach jedem Clip wird der Link erstellt und in die Zwischenablage kopiert; ein noch laufender Link wird durch den neuen Clip ersetzt.
+- **Clip auswählen und teilen …**: beliebige eigene Videos teilen. Nur MKV/MP4 bis 500 MB; geprüft wird der Dateiinhalt (Matroska-/MP4-Signatur), nicht nur die Endung.
+- Keine Pop-up-Benachrichtigungen mehr. Stattdessen vier neue, weichere Soundeffekte (Clip, Upload, Link fertig, Fehler), die sich nicht gegenseitig abschneiden. „Soundeffekte“ schaltet alle ab.
+- Link schneller fertig (gemessen ca. 8,6 statt 12+ Sekunden; den größten Teil, ca. 6 s, braucht Cloudflare zum Vergeben des Links): Das MP4 wird parallel vorbereitet, die Prüfung läuft für IPv4/IPv6 gleichzeitig und braucht nur noch ca. 1 s. Tunnel ohne funktionierenden Link erkennt MonoClip nach 6 s und fordert automatisch einen neuen an.
+- Tray-Symbol zeigt den Status: drehender Bogen beim Erstellen des Links, kleiner Punkt oben rechts solange der Link online ist, „!“ für einige Sekunden bei Fehlern; der Grund steht im Tooltip und im Einstellungsfenster. Auch Export- und Aufnahmefehler im Hintergrund werden so gemeldet.
+
 ## 0.1.7 Beta
 
 - Tray → **Letzten Clip teilen · 15 Min.**: verlustfreie MP4-Kopie mit vorgezogenem Index, Bereitstellung nur auf 127.0.0.1 und ein Cloudflare-Quick-Tunnel. Link landet in der Zwischenablage; ohne Portfreigabe, Konto oder Adminrechte, auch hinter DS-Lite/CGNAT.

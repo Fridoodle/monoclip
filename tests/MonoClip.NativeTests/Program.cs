@@ -38,7 +38,7 @@ try {
         using var share=new MonoClip.Windows.Share.ClipShare();var steps=new List<string>();
         var task=share.ShareAsync(source,TimeSpan.FromMinutes(5),new Progress<string>(steps.Add));var clock=System.Diagnostics.Stopwatch.StartNew();
         while(!task.IsCompleted&&clock.Elapsed.TotalSeconds<180){Application.DoEvents();Thread.Sleep(20);}
-        var info=task.GetAwaiter().GetResult();Console.WriteLine("INFO "+string.Join(" | ",steps)+" | "+info.Url);
+        var info=task.GetAwaiter().GetResult();Console.WriteLine($"TIME Link kopierbar nach {clock.Elapsed.TotalSeconds:0.0} s");Console.WriteLine("INFO "+string.Join(" | ",steps)+" | "+info.Url);
         if(!info.Url.StartsWith("https://")||!info.Url.Contains(".trycloudflare.com/")||(info.ExpiresAt-DateTimeOffset.Now).TotalMinutes is <4.9 or >5.01)throw new Exception("unexpected share "+info);
         var local=Directory.EnumerateFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","share"),"*.mp4").Single();var expected=File.ReadAllBytes(local);
         using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(60)};

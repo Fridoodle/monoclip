@@ -23,7 +23,7 @@ internal sealed class CloudflaredTunnel : IDisposable
     public static async Task<CloudflaredTunnel> StartAsync(int port, IProgress<string>? progress, CancellationToken cancel)
     {
         var exe = await EnsureBinaryAsync(progress, cancel);
-        progress?.Report("Tunnel wird aufgebaut …");
+        progress?.Report("Cloudflare vergibt den Link …");
         var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true, WorkingDirectory = Path.GetDirectoryName(exe)! };
         foreach (var arg in new[] { "tunnel", "--no-autoupdate", "--url", $"http://127.0.0.1:{port}" }) info.ArgumentList.Add(arg);
         var process = new Process { StartInfo = info, EnableRaisingEvents = true };

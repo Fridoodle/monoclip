@@ -9,9 +9,9 @@ public sealed class SettingsForm : Form
     const int LogicalWidth = 660, LogicalHeight = 900, LogicalMinWidth = 380, LogicalMinHeight = 320, NarrowContent = 430, WidePadding = 28, NarrowPadding = 16;
     AppSettings original; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
     readonly ComboBox resolution = new(), fps = new(), games = new(); readonly NumericUpDown duration = new(); readonly TextBox hotkey = new(), directory = new();
-    readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new();
+    readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new(), autoShare = new();
     readonly MonoSlider quality = new("Performance", "Ausgewogen", "Qualität"); readonly List<Control> advancedOnly = [];
-    readonly NumericUpDown shareMinutes = new(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new();
+    readonly NumericUpDown shareMinutes = new(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new(); readonly Button pickButton = new MonoButton(); Action<string>? shareFile;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }; IClipSharer? sharer;
     readonly Label status = new(), target = new(), budget = new(), feedback = new(); readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton();
     readonly TableLayoutPanel table = new() { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(WidePadding, 18, WidePadding, 18) };
@@ -51,14 +51,19 @@ public sealed class SettingsForm : Form
         Section("AUDIO", true);
         Check(desktop, "Desktop-Audio aufnehmen", settings.DesktopAudio, true); Check(mic, "Mikrofon aufnehmen", settings.Microphone, true); desktop.CheckedChanged += (_, _) => UpdateBudget(); mic.CheckedChanged += (_, _) => UpdateBudget();
         Full(new Label { Text = "Windows-Standardgeräte. Separate Desktop- und Mikrofonspur; zusätzlich eine gemischte Spur für normale Wiedergabe.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 4, 0, 8) }, true);
-        Check(clipBeep, "Kurzer Beep bei gespeichertem Clip", settings.ClipBeep, true);
+        Check(clipBeep, "Soundeffekte · Clip, Upload, Link, Fehler", settings.ClipBeep, true);
         Section("HINTERGRUND"); Check(autostart, "Mit Windows starten · immer minimiert", settings.StartWithWindows); Check(minimized, "Nur im Tray starten", settings.StartMinimized, true); Check(bufferOnLaunch, "Replay-Puffer beim App-Start aktivieren", settings.StartBufferOnLaunch, true);
         Section("CLIPS"); StyleText(directory); directory.Text = settings.ClipsDirectory;
         var pathPanel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill }; pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); directory.Dock = DockStyle.Fill; directory.Margin = new Padding(0, 3, 6, 3); pathPanel.Controls.Add(directory, 0, 0);
         var browse = Button("…", () => { using var dialog = new FolderBrowserDialog { InitialDirectory = directory.Text, Description = "Ordner für lokale Clips" }; if (dialog.ShowDialog(this) == DialogResult.OK) directory.Text = dialog.SelectedPath; }); browse.MinimumSize = new Size(Px(42), Px(30)); browse.Margin = Padding.Empty; pathPanel.Controls.Add(browse, 1, 0); Row("Speicherordner", pathPanel);
         StyleCombo(games); games.Items.Add("Alle Clips"); games.SelectedIndex = 0; Row("Nach Spiel", games, true);
-        shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.Value = settings.ShareMinutes; shareMinutes.BackColor = Black; shareMinutes.ForeColor = White; shareMinutes.BorderStyle = BorderStyle.FixedSingle; shareMinutes.AccessibleName = "Teilen-Dauer in Minuten"; Row("Link teilen · Minuten online", shareMinutes, true);
         var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Ordner öffnen", () => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory)))); var refresh = Button("Liste aktualisieren", RefreshGames); libraryActions.Controls.Add(refresh); advancedOnly.Add(refresh); Full(libraryActions);
+        Section("TEILEN", true);
+        Check(autoShare, "Neue Clips automatisch teilen · Link in die Zwischenablage", settings.AutoShare, true);
+        shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.Value = settings.ShareMinutes; shareMinutes.BackColor = Black; shareMinutes.ForeColor = White; shareMinutes.BorderStyle = BorderStyle.FixedSingle; shareMinutes.AccessibleName = "Teilen-Dauer in Minuten"; Row("Link teilen · Minuten online", shareMinutes, true);
+        StyleButton(pickButton); pickButton.Text = "Clip auswählen und teilen …"; pickButton.Enabled = false; pickButton.Click += (_, _) => PickAndShare();
+        var pick = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; pick.Controls.Add(pickButton); Full(pick, true);
+        Full(new Label { Text = $"Nur MKV- oder MP4-Videos bis {SharePolicy.MaxShareMegabytes} MB.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 2, 0, 4) }, true);
         feedback.AutoSize = true; feedback.ForeColor = Muted; feedback.Margin = new Padding(0, 8, 0, 0); Full(feedback);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
         scroll.ClientSizeChanged += (_, _) => Relayout(); DpiChanged += (_, _) => { narrow = null; Relayout(); };
@@ -163,7 +168,7 @@ public sealed class SettingsForm : Form
     static void StyleText(TextBox t) { t.BackColor = Color.FromArgb(24, 24, 24); t.ForeColor = White; t.BorderStyle = BorderStyle.FixedSingle; }
     void StyleButton(Button b) { b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Line; b.BackColor = Black; b.ForeColor = White; b.AutoSize = true; b.Padding = new Padding(9, 4, 9, 4); b.MinimumSize = new Size(Px(100), Px(34)); b.Cursor = Cursors.Hand; b.UseVisualStyleBackColor = false; }
     Button Button(string text, Action action) { var b = new MonoButton { Text = text }; StyleButton(b); b.Click += (_, _) => action(); return b; }
-    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked, ShareMinutes = (int)shareMinutes.Value }; s.Validate(); return s; }
+    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked, ShareMinutes = (int)shareMinutes.Value, AutoShare = autoShare.Checked }; s.Validate(); return s; }
     void UpdateBudget()
     {
         if (fps.SelectedItem == null) return; var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) };
@@ -176,9 +181,15 @@ public sealed class SettingsForm : Form
     internal static string FormatSize(double megabytes) => megabytes >= 1024 ? $"{megabytes / 1024:0.0} GB" : megabytes >= 10 ? $"{megabytes:0} MB" : $"{megabytes:0.0} MB";
     public void UpdateStatus() { status.Text = (engine.IsRunning ? "●  " : "○  ") + engine.Status; target.Text = engine.CaptureTarget + "  /  " + engine.EncoderName; toggleButton.Text = engine.IsRunning ? "Puffer stoppen" : "Puffer starten"; clipButton.Enabled = engine.IsRunning; UpdateShareControls(); }
     // Called by the tray: sharing lives there so the menu and this window always show the same link.
-    public void AttachSharing(IClipSharer sharer, Action toggleShare, Action copyLink)
+    public void AttachSharing(IClipSharer sharer, Action toggleShare, Action copyLink, Action<string> shareFile)
     {
-        this.sharer = sharer; shareButton.Click += (_, _) => toggleShare(); copyLinkButton.Click += (_, _) => copyLink(); shareTicker.Start(); UpdateShareControls();
+        this.sharer = sharer; this.shareFile = shareFile; pickButton.Enabled = true;
+        shareButton.Click += (_, _) => toggleShare(); copyLinkButton.Click += (_, _) => copyLink(); shareTicker.Start(); UpdateShareControls();
+    }
+    void PickAndShare()
+    {
+        using var dialog = new OpenFileDialog { Title = "Clip zum Teilen auswählen", Filter = "Videos (*.mkv;*.mp4)|*.mkv;*.mp4", InitialDirectory = Directory.Exists(original.ClipsDirectory) ? original.ClipsDirectory : "", CheckFileExists = true };
+        if (dialog.ShowDialog(this) == DialogResult.OK) shareFile?.Invoke(dialog.FileName);
     }
     void UpdateShareControls()
     {

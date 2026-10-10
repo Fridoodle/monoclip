@@ -10,15 +10,17 @@ public sealed class ClipShareServer : IDisposable
 {
     const int MaxHeaderBytes = 8192;
     static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
-    readonly string file; readonly long length; readonly byte[] path;
+    readonly string file; readonly byte[] path; volatile bool ready = true;
     readonly TcpListener listener = new(IPAddress.Loopback, 0); readonly CancellationTokenSource stop = new();
     readonly SemaphoreSlim slots; readonly HashSet<TcpClient> clients = []; readonly int cacheSeconds; long bytesSent; bool disposed;
     public string RequestPath { get; }
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     public long BytesSent => Interlocked.Read(ref bytesSent);
+    // False while the file is still being written: requests get 503 so the tunnel can start in parallel.
+    public bool Ready { get => ready; set => ready = value; }
     public ClipShareServer(string file, string requestPath, int maxConnections = SharePolicy.MaxConnections, int cacheSeconds = SharePolicy.DefaultMinutes * 60)
     {
-        this.cacheSeconds = cacheSeconds; this.file = file; length = new FileInfo(file).Length; RequestPath = requestPath; path = Encoding.UTF8.GetBytes(requestPath); slots = new(maxConnections, maxConnections);
+        this.cacheSeconds = cacheSeconds; this.file = file; RequestPath = requestPath; path = Encoding.UTF8.GetBytes(requestPath); slots = new(maxConnections, maxConnections);
     }
     public void Start() { listener.Start(); _ = AcceptAsync(); }
     async Task AcceptAsync()
@@ -73,6 +75,8 @@ public sealed class ClipShareServer : IDisposable
         if (request[0] is not ("GET" or "HEAD")) { await WriteHead(stream, "405 Method Not Allowed", [("Allow", "GET, HEAD")], 0, false); return false; }
         var target = Encoding.UTF8.GetBytes(request[1].Split('?')[0]);
         if (!CryptographicOperations.FixedTimeEquals(target, path)) { await WriteHead(stream, "404 Not Found", [], 0, keepAlive); return keepAlive; }
+        if (!ready || !File.Exists(file)) { await WriteHead(stream, "503 Service Unavailable", [("Retry-After", "1")], 0, keepAlive); return keepAlive; }
+        long length = new FileInfo(file).Length;
         var range = ParseRange(headers.GetValueOrDefault("Range"), length, out bool unsatisfiable);
         if (unsatisfiable) { await WriteHead(stream, "416 Range Not Satisfiable", [("Content-Range", $"bytes */{length}")], 0, keepAlive); return keepAlive; }
         var (start, last) = range ?? (0, length - 1); long count = length == 0 ? 0 : last - start + 1;
