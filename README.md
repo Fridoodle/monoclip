@@ -13,11 +13,11 @@
 - Automatisch ermittelte Bitrate mit Qualitätsregler (Performance / Ausgewogen / Qualität), geschätzte Dateigröße pro Clip, begrenzter RAM-Puffer und 5–300 Sekunden Cliplänge.
 - Konfigurierbarer globaler Hotkey, standardmäßig **Ctrl+Shift+F9**. Windows-Hotkey plus ereignisgesteuerter Raw-Input-Zustellung, ohne Dauer-Polling.
 - Separate Desktop-/Mikrofonspuren und zusätzlicher Wiedergabe-Mix.
-- Abschaltbarer kurzer Beep nach erfolgreichem Speichern, keine Erfolgs-Popups.
+- Keine Pop-up-Benachrichtigungen: kurze Soundeffekte für Clip, Upload, fertigen Link und Fehler (abschaltbar).
 - Optionaler Windows-Autostart, immer minimiert; der Puffer startet standardmäßig mit der App.
 - **Tray → Clip-Ordner öffnen** springt im Explorer direkt zum zuletzt gespeicherten Clip.
-- **Letzten Clip teilen** (Tray oder Einstellungsfenster): Link für Discord & Co., standardmäßig 15 Minuten (einstellbar 5–30), direkt von deinem PC gestreamt, ohne Portfreigabe, Konto oder Adminrechte. Danach automatisch offline.
-- Tray-Symbol: schwarze Kachel mit gefülltem Punkt = Puffer nimmt auf, mit Ring = gestoppt.
+- **Letzten Clip teilen** (Tray oder Einstellungsfenster): Link für Discord & Co., standardmäßig 15 Minuten (einstellbar 5–30), direkt von deinem PC gestreamt, ohne Portfreigabe, Konto oder Adminrechte. Danach automatisch offline. Optional wird jeder neue Clip automatisch geteilt; auch beliebige eigene MKV/MP4-Videos bis 500 MB lassen sich auswählen.
+- Tray-Symbol: schwarze Kachel mit gefülltem Punkt = Puffer nimmt auf, Ring = gestoppt, drehender Bogen = Link wird erstellt, kleiner Punkt oben rechts = Link ist online, „!“ = Fehler (Grund im Tooltip).
 - Spielordner als Clip-Index. **Keine JSON-Begleitdateien neben neuen Clips.**
 - Kein Konto, Cloud-Upload, Telemetrie, Electron oder WebView.
 
@@ -50,11 +50,13 @@ Standardmäßig zeigt das Fenster nur die wichtigsten Optionen. **Erweiterte Ein
 | Speicherordner, Ordner öffnen | Einfach | Ordner öffnen markiert den neuesten Clip |
 | Qualität · Bitrate | Erweitert | Performance (kleinere Dateien), Ausgewogen, Qualität (schärfer in schnellen Szenen) |
 | Desktop-Audio, Mikrofon | Erweitert | Separate Spuren plus Wiedergabe-Mix |
-| Kurzer Beep bei gespeichertem Clip | Erweitert | Abschaltbarer Erfolgston, standardmäßig aktiviert |
+| Soundeffekte | Erweitert | Töne für Clip, Upload, fertigen Link und Fehler; standardmäßig an |
 | Nur im Tray starten | Erweitert | Kein Einstellungsfenster beim Start |
 | Replay-Puffer beim App-Start aktivieren | Erweitert | Standardmäßig an; unabhängig vom Windows-Autostart |
 | Nach Spiel, Liste aktualisieren | Erweitert | Clip-Ordner eines Spiels öffnen |
+| Neue Clips automatisch teilen | Erweitert | Nach jedem Clip Link erstellen und kopieren; standardmäßig aus |
 | Link teilen · Minuten online | Erweitert | 5–30 Minuten, Standard 15 |
+| Clip auswählen und teilen … | Erweitert | Eigenes MKV/MP4 bis 500 MB teilen; der Dateiinhalt wird geprüft |
 
 Die Bitrate wird aus Auflösung, FPS und Qualitätsstufe berechnet. Mehr Pixel und mehr Bilder kosten mehr Bits, aber nicht proportional, weil H.264 bei höherer Auflösung und Bildrate effizienter wird. Referenz: Ausgewogen 1080p60 = 15 Mbit/s; Performance ×0,6, Qualität ×1,6; begrenzt auf 2,5–100 Mbit/s. Die Größenschätzung enthält alle Audiospuren und etwas Container-Overhead; ruhige Inhalte werden meist etwas kleiner.
 
@@ -85,13 +87,13 @@ Audio verwendet die Windows-Standardausgabe und das Windows-Standardmikrofon:
 2. **Desktop:** separate Desktopspur, sofern aktiviert.
 3. **Microphone:** separate Mikrofonspur, sofern aktiviert. Bei deaktiviertem Desktop ist sie die zweite vorhandene Spur.
 
-Windows muss Desktop-Apps den Mikrofonzugriff erlauben. Sind beide Quellen deaktiviert, bleibt nur eine technisch notwendige stumme AAC-Spur; es wird keine Audioquelle geöffnet. Der Beep läuft über die Standardausgabe und kann in einem späteren Desktop-Audio-Clip enthalten sein.
+Windows muss Desktop-Apps den Mikrofonzugriff erlauben. Sind beide Quellen deaktiviert, bleibt nur eine technisch notwendige stumme AAC-Spur; es wird keine Audioquelle geöffnet. Die Soundeffekte laufen über die Standardausgabe und können in einem späteren Desktop-Audio-Clip enthalten sein.
 
 MKV lässt sich etwa mit VLC abspielen. Manche Upload-Dienste/Editoren verlangen MP4; dafür ist ein verlustfreies Remux erforderlich. Ein Editor oder Remux-Dialog ist nicht eingebaut (beim Teilen remuxt MonoClip intern eine temporäre MP4-Kopie).
 
 ## Clip teilen (Standard 15 Minuten)
 
-Rechtsklick auf das Tray-Symbol → **Letzten Clip teilen · 15 Min.**, oder im Einstellungsfenster oben **Letzten Clip teilen**. Dort gibt es während des Teilens auch **Link kopieren** und die Restzeit. Die Dauer lässt sich in den erweiterten Einstellungen zwischen 5 und 30 Minuten wählen. Benachrichtigungen zeigen beim Start, wie lange das Erstellen dauert, danach bis wann der Link online ist, und am Ende, dass er offline ist. MonoClip packt den Clip verlustfrei in eine MP4 um (spielt im Browser und in Discord), öffnet einen Cloudflare-Quick-Tunnel und kopiert den Link in die Zwischenablage. In Discord einfügen – Freunde schauen den Clip im Browser bzw. im Discord-Player.
+Rechtsklick auf das Tray-Symbol → **Letzten Clip teilen · 15 Min.**, oder im Einstellungsfenster oben **Letzten Clip teilen**. Dort gibt es während des Teilens auch **Link kopieren** und die Restzeit. In den erweiterten Einstellungen lassen sich die Dauer (5–30 Minuten), **Neue Clips automatisch teilen** und **Clip auswählen und teilen …** einstellen. Statt Pop-ups gibt es Töne (Upload beginnt, Link kopiert, Fehler) und das Tray-Symbol: drehender Bogen, solange der Link erstellt wird, kleiner Punkt oben rechts, solange er online ist. MonoClip packt den Clip verlustfrei in eine MP4 um (spielt im Browser und in Discord), öffnet einen Cloudflare-Quick-Tunnel und kopiert den Link in die Zwischenablage. In Discord einfügen – Freunde schauen den Clip im Browser bzw. im Discord-Player.
 
 - **Kein Port-Forwarding, kein Konto, keine Adminrechte.** Der Clip wird nur auf `127.0.0.1` bereitgestellt; cloudflared baut eine ausgehende Verbindung zu Cloudflare auf. Das funktioniert auch hinter DS-Lite/CGNAT, wo eine eigene öffentliche IPv4 gar nicht existiert. Deine IP-Adresse steht nicht im Link.
 - **Nach Ablauf der Zeit** (oder **Teilen beenden**, oder beim Beenden von MonoClip) werden Tunnel, Server und die MP4-Kopie entfernt. Auch bei einem Absturz endet der Tunnel mit MonoClip. Höchstens 6 gleichzeitige Verbindungen, damit die eigene Upload-Leitung nicht zugestopft wird; jeder Zuschauer lädt den Clip aber von deinem Anschluss.

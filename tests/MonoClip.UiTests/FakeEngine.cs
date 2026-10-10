@@ -1,7 +1,7 @@
 using MonoClip.Core;
 using MonoClip.Windows;
 public sealed class FakeSharer:IClipSharer {
- public ShareInfo? Current{get;private set;} public bool IsStarting=>false; public bool FirstUse=>false; public event EventHandler? Changed; public string? SharedClip; public TimeSpan Duration; public int Stops;
+ public ShareInfo? Current{get;private set;} public bool IsStarting=>false; public bool FirstUse=>false; public event EventHandler? Changed; public string? SharedClip{get;set;} public TimeSpan Duration; public int Stops;
  public Task<ShareInfo> ShareAsync(string clip,TimeSpan duration,IProgress<string>? progress=null){SharedClip=clip;Duration=duration;progress?.Report("test");Current=new("https://fake-host.trycloudflare.com/t/clip.mp4",DateTimeOffset.Now+duration,clip);Changed?.Invoke(this,EventArgs.Empty);return Task.FromResult(Current);}
  public void Stop(){Stops++;if(Current==null)return;Current=null;Changed?.Invoke(this,EventArgs.Empty);} public void Dispose()=>Stop();
 }

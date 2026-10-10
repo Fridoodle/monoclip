@@ -67,7 +67,7 @@ Test("settings expose required safe defaults", () =>
         ["Width"] = 1920, ["Height"] = 1080, ["Fps"] = 60, ["ClipSeconds"] = 30,
         ["Hotkey"] = "Ctrl+Shift+F9", ["Microphone"] = true, ["DesktopAudio"] = true,
         ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = true,
-        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15,
+        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false,
         ["MicrophoneDevice"] = "default", ["DesktopDevice"] = "default",
         ["ClipsDirectory"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip")
     };
@@ -273,6 +273,29 @@ Test("starter passes every argument through Windows command-line parsing unchang
     Equal(@"C:\Mono Clip\app\MonoClip.exe",parsed[0]);Equal(args.Length+1,parsed.Length);
     for(int i=0;i<args.Length;i++)Equal(args[i],parsed[i+1]);
     Equal("plain",CommandLine.Quote("plain"));Equal("\"\"",CommandLine.Quote(""));
+});
+Test("only real MKV/MP4 videos up to the size limit can be shared manually",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-shareable-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{string F(string name,byte[] data){var p=Path.Combine(dir,name);File.WriteAllBytes(p,data);return p;}
+        byte[] mkv=[0x1A,0x45,0xDF,0xA3,0x9F,0x42,0x86,0x81,1,0,0,0];byte[] mp4=[0,0,0,24,(byte)'f',(byte)'t',(byte)'y',(byte)'p',(byte)'i',(byte)'s',(byte)'o',(byte)'m'];
+        SharePolicy.CheckShareable(F("clip.mkv",mkv));SharePolicy.CheckShareable(F("clip.MP4",mp4));
+        Throws<ArgumentException>(()=>SharePolicy.CheckShareable(Path.Combine(dir,"missing.mkv")));
+        Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("tool.exe",mkv)));
+        Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("renamed.mp4",Encoding.ASCII.GetBytes("MZ this is a program, not a video"))));
+        Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("empty.mkv",[])));
+        Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("tiny.mkv",[0x1A,0x45])));
+        var big=Path.Combine(dir,"big.mkv");using(var s=File.Create(big)){s.Write(mkv);s.SetLength((SharePolicy.MaxShareMegabytes+1)*1024L*1024);}
+        try{SharePolicy.CheckShareable(big);throw new Exception("oversized file accepted");}catch(ArgumentException e){True(e.Message.Contains("maximal "+SharePolicy.MaxShareMegabytes+" MB"),"size reason missing: "+e.Message);}
+        Equal(500,SharePolicy.MaxShareMegabytes);
+    }finally{Directory.Delete(dir,true);}
+});
+Test("share server can start before the clip is ready and answers 503 until then",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-ready-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var file=Path.Combine(dir,"later.mp4");using var server=new ClipShareServer(file,"/t/later.mp4"){Ready=false};server.Start();using var http=new HttpClient{BaseAddress=new($"http://127.0.0.1:{server.Port}")};
+        var early=http.GetAsync("/t/later.mp4").Result;Equal(503,(int)early.StatusCode);Equal("1",early.Headers.RetryAfter!.ToString());
+        File.WriteAllBytes(file,new byte[]{1,2,3});Equal(503,(int)http.GetAsync("/t/later.mp4").Result.StatusCode);
+        server.Ready=true;var ok=http.GetAsync("/t/later.mp4").Result;Equal(200,(int)ok.StatusCode);Equal(3L,ok.Content.Headers.ContentLength);
+    }finally{Directory.Delete(dir,true);}
 });
 // NEXT_TEST
 Console.WriteLine($"RESULT {count - failures}/{count} passed");

@@ -25,61 +25,77 @@ public sealed class ClipShare : IClipSharer
         if (duration < TimeSpan.FromMinutes(SharePolicy.MinMinutes) || duration > TimeSpan.FromMinutes(SharePolicy.MaxMinutes)) throw new ArgumentOutOfRangeException(nameof(duration));
         if (!File.Exists(clipPath)) throw new FileNotFoundException("Clip nicht gefunden.", clipPath);
         Stop(); var cancel = new CancellationTokenSource(); starting = cancel; Changed?.Invoke(this, EventArgs.Empty);
-        var token = SharePolicy.NewToken(); var target = Path.Combine(Root, token + ".mp4");
+        var token = SharePolicy.NewToken(); var target = Path.Combine(Root, token + ".mp4"); Task remux = Task.CompletedTask;
         try
         {
             Directory.CreateDirectory(Root); copy = target;
-            progress?.Report("Clip wird für Browser und Discord vorbereitet …");
-            await Task.Run(() => ClipRemux.ToFastStartMp4(clipPath, target), cancel.Token); cancel.Token.ThrowIfCancellationRequested();
-            var local = server = new ClipShareServer(target, SharePolicy.RequestPath(token, clipPath), cacheSeconds: (int)duration.TotalSeconds); local.Start();
-            var t = tunnel = await CloudflaredTunnel.StartAsync(local.Port, progress, cancel.Token);
+            var local = server = new ClipShareServer(target, SharePolicy.RequestPath(token, clipPath), cacheSeconds: (int)duration.TotalSeconds) { Ready = false }; local.Start();
+            // Cloudflare needs about 6 s to assign a link: prepare the MP4 in the meantime, not before.
+            progress?.Report("Clip wird vorbereitet · Cloudflare vergibt den Link …");
+            remux = Task.Run(() => ClipRemux.ToFastStartMp4(clipPath, target), cancel.Token);
+            CloudflaredTunnel t;
+            for (int attempt = 1; ; attempt++)
+            {
+                t = tunnel = await CloudflaredTunnel.StartAsync(local.Port, progress, cancel.Token);
+                await remux; local.Ready = true; cancel.Token.ThrowIfCancellationRequested();
+                progress?.Report("Link wird geprüft …");
+                // A working tunnel answers within about a second of registering. One that has no public DNS record
+                // (Cloudflare sometimes hands those out, more often after many links in a row) never does.
+                var problem = await ProbeUntilReachableAsync(t.PublicUrl + local.RequestPath, TimeSpan.FromSeconds(6), cancel.Token);
+                if (problem == null) break;
+                if (attempt == 2) throw new InvalidOperationException($"Cloudflare hat gerade keinen funktionierenden Link vergeben ({problem}). Bitte in ein paar Minuten erneut teilen.");
+                progress?.Report("Cloudflare antwortet nicht · neuer Link wird angefordert …");
+                tunnel = null; t.Dispose();
+            }
             t.Exited += (_, _) => ui.Post(_ => { if (ReferenceEquals(tunnel, t)) Stop(); }, null);
-            var info = new ShareInfo(t.PublicUrl + local.RequestPath, DateTimeOffset.Now + duration, clipPath);
-            progress?.Report("Link wird geprüft …");
-            await WaitReachableAsync(info.Url, cancel.Token);
             // The public DNS record follows the registration by about 1.5 s. Asking too early would make
             // resolvers (including Windows on this PC) cache "does not exist" for a minute.
-            var settle = t.RegisteredAt.AddSeconds(3) - DateTime.UtcNow; if (settle > TimeSpan.Zero) await Task.Delay(settle, cancel.Token);
+            var settle = t.RegisteredAt.AddSeconds(2) - DateTime.UtcNow; if (settle > TimeSpan.Zero) await Task.Delay(settle, cancel.Token);
             // The window counts from the moment the link is handed out, not from the start of preparation.
-            info = info with { ExpiresAt = DateTimeOffset.Now + duration };
+            var info = new ShareInfo(t.PublicUrl + local.RequestPath, DateTimeOffset.Now + duration, clipPath);
             Current = info; expiry.Interval = (int)duration.TotalMilliseconds; expiry.Start();
             return info;
         }
-        // A cancel during remux can leave the copy behind after Stop() already ran.
-        catch { if (ReferenceEquals(starting, cancel)) Stop(); else TryDelete(target); throw; }
+        catch
+        {
+            // Let a running remux finish first, otherwise it could recreate the copy after cleanup.
+            try { await remux; } catch { }
+            if (ReferenceEquals(starting, cancel)) Stop(); else TryDelete(target);
+            throw;
+        }
         finally { if (ReferenceEquals(starting, cancel)) starting = null; cancel.Dispose(); Changed?.Invoke(this, EventArgs.Empty); }
     }
     // Checks the route through Cloudflare without looking up the brand-new host name: connect to the
-    // edge addresses of trycloudflare.com and let TLS/Host select the tunnel. A new host reaches all
-    // Cloudflare servers within seconds, so IPv4 and IPv6 must each answer four times in a row.
-    // A dead link is never handed out.
-    static async Task WaitReachableAsync(string url, CancellationToken cancel)
+    // edge addresses of trycloudflare.com and let TLS/Host select the tunnel. IPv4 and IPv6 are probed
+    // in parallel and must each answer twice in a row. Returns null when reachable, else the last problem.
+    static async Task<string?> ProbeUntilReachableAsync(string url, TimeSpan limit, CancellationToken cancel)
     {
         IPAddress[] edge;
-        try { edge = await Dns.GetHostAddressesAsync("trycloudflare.com", cancel); } catch (SocketException) { return; }
-        var families = edge.GroupBy(a => a.AddressFamily).Select(g => new Family(g.ToArray())).ToList();
-        if (families.Count == 0) return;
-        string last = "keine Antwort"; var until = DateTime.UtcNow.AddSeconds(40);
-        while (DateTime.UtcNow < until)
-        {
-            foreach (var f in families.Where(f => f.Usable && f.Streak < RequiredStreak))
-            {
-                var (ok, responded, detail) = await ProbeAsync(f.Addresses, url, cancel);
-                f.Streak = ok ? f.Streak + 1 : 0; if (responded) f.Responded = true; else f.ConnectFailures++;
-                if (!ok) last = detail;
-            }
-            if (!families.Any(f => f.Usable)) return; // Neither family can reach Cloudflare from here; nothing to verify.
-            if (families.All(f => !f.Usable || f.Streak >= RequiredStreak)) return;
-            await Task.Delay(1000, cancel);
-        }
-        throw new InvalidOperationException($"Cloudflare leitet den Link noch nicht weiter ({last}). Bitte in einer Minute erneut teilen.");
-    }
-    const int RequiredStreak = 4;
-    sealed class Family(IPAddress[] addresses)
-    {
-        public IPAddress[] Addresses { get; } = addresses; public int Streak, ConnectFailures; public bool Responded;
+        try { edge = await Dns.GetHostAddressesAsync("trycloudflare.com", cancel); } catch (SocketException) { return null; }
+        var families = edge.GroupBy(a => a.AddressFamily).Select(g => g.ToArray()).ToList();
+        if (families.Count == 0) return null;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel); deadline.CancelAfter(limit);
+        var results = await Task.WhenAll(families.Select(f => FamilyAsync(f, url, deadline.Token)));
+        cancel.ThrowIfCancellationRequested();
         // A family that never connects (no IPv6 on this network) is not required.
-        public bool Usable => Responded || ConnectFailures < 3;
+        if (results.All(r => !r.Usable)) return null;
+        return results.FirstOrDefault(r => r.Usable && !r.Ok).Detail;
+    }
+    static async Task<(bool Ok, bool Usable, string? Detail)> FamilyAsync(IPAddress[] addresses, string url, CancellationToken token)
+    {
+        int streak = 0, connectFailures = 0; bool responded = false; string last = "keine Antwort";
+        try
+        {
+            while (true)
+            {
+                var (ok, answered, detail) = await ProbeAsync(addresses, url, token);
+                if (answered) responded = true; else if (++connectFailures >= 3 && !responded) return (false, false, detail);
+                streak = ok ? streak + 1 : 0; if (!ok) last = detail;
+                if (streak >= 2) return (true, true, null);
+                await Task.Delay(250, token);
+            }
+        }
+        catch (OperationCanceledException) { return (false, responded || connectFailures < 3, last); }
     }
     static async Task<(bool Ok, bool Responded, string Detail)> ProbeAsync(IPAddress[] addresses, string url, CancellationToken cancel)
     {
