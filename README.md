@@ -6,15 +6,16 @@
 
 ## Funktionen
 
-- Automatische Vollbild-/Borderless-Spielaufnahme und Desktop-Fallback.
-- Der Monitor folgt dem aktiven Fenster – keine manuelle Bildschirmauswahl.
-- GPU-Aufnahme über DXGI; bei Startproblemen Windows Graphics Capture.
+- **Aufgenommen wird das Fenster unter der Maus:** das gehookte Spiel, sonst nur das jeweilige App-Fenster (z. B. Discord statt des Spiels im Hintergrund), über Desktop/Taskleiste der ganze Monitor.
+- Automatische Vollbild-/Borderless-Spielaufnahme; der Spiel-Hook bleibt beim Wegtabben aktiv, das Zurückwechseln ist sofort.
+- GPU-Aufnahme: Spiel-Hook, Fenster über Windows Graphics Capture, Monitor über DXGI mit WGC-Fallback.
 - 720p / 1080p / 1440p / 2160p und 30 / 60 / 120 FPS, soweit die GPU die Kombination unterstützt.
-- Automatische Bitrate, begrenzter RAM-Puffer und 5–300 Sekunden Cliplänge.
+- Automatisch ermittelte Bitrate mit Qualitätsregler (Performance / Ausgewogen / Qualität), geschätzte Dateigröße pro Clip, begrenzter RAM-Puffer und 5–300 Sekunden Cliplänge.
 - Konfigurierbarer globaler Hotkey, standardmäßig **Ctrl+Shift+F9**. Windows-Hotkey plus ereignisgesteuerter Raw-Input-Zustellung, ohne Dauer-Polling.
 - Separate Desktop-/Mikrofonspuren und zusätzlicher Wiedergabe-Mix.
 - Abschaltbarer kurzer Beep nach erfolgreichem Speichern, keine Erfolgs-Popups.
-- Optionaler Windows-Autostart, immer minimiert; automatisches Aktivieren des Puffers separat einstellbar.
+- Optionaler Windows-Autostart, immer minimiert; der Puffer startet standardmäßig mit der App.
+- **Tray → Clip-Ordner öffnen** springt im Explorer direkt zum zuletzt gespeicherten Clip.
 - Spielordner als Clip-Index. **Keine JSON-Begleitdateien neben neuen Clips.**
 - Kein Konto, Cloud-Upload, Telemetrie, Electron oder WebView.
 
@@ -25,8 +26,8 @@ Aktuelle Version: **[GitHub Releases](https://github.com/Fridoodle/monoclip/rele
 Portabel, **ein einziger Download**, keine Installation, **keine Adminrechte**: Die Aufnahme-Runtime (unveränderte OBS-Bibliotheken) und .NET sind bereits enthalten. Kein Setup-Skript, kein zweiter Download, keine Internetverbindung beim Start.
 
 1. ZIP in einen beliebigen Ordner entpacken, z. B. `Dokumente\MonoClip` oder einen USB-Stick. Für Updates MonoClip vorher beenden und die neue Version in einen neuen Ordner entpacken.
-2. `MonoClip.exe` starten. Bei einer frischen Konfiguration startet die App nur im Tray und mit gestopptem Puffer.
-3. Rechtsklick auf das Schwarz-Weiß-Symbol → **Puffer starten** oder **Einstellungen**.
+2. `MonoClip.exe` starten. Bei einer frischen Konfiguration startet die App nur im Tray, der Replay-Puffer läuft sofort.
+3. Rechtsklick auf das Schwarz-Weiß-Symbol → **Einstellungen**, **Puffer stoppen** oder **Clip-Ordner öffnen**.
 4. Für einen vollständigen Clip die eingestellte Cliplänge plus wenige Sekunden warten, dann den Hotkey drücken.
 
 Deinstallieren: Ordner löschen (vorher ggf. „Mit Windows starten“ ausschalten). Einstellungen und Logs liegen unter `%LOCALAPPDATA%\MonoClip`.
@@ -35,13 +36,29 @@ Fenster schließen/minimieren versteckt die Einstellungen. Wirklich beenden: **T
 
 ### Einstellungen
 
-| Option | Bedeutung |
-|---|---|
-| Nur im Tray starten | Kein Einstellungsfenster beim Start |
-| Mit Windows starten | Autostart nur für den aktuellen Benutzer |
-| Replay-Puffer beim App-Start aktivieren | Aufnahme automatisch starten; unabhängig vom Windows-Autostart |
-| Kurzer Beep bei gespeichertem Clip | Abschaltbarer Erfolgston, standardmäßig aktiviert |
-| Hotkey | Feld auswählen und die gewünschte Kombination drücken |
+Standardmäßig zeigt das Fenster nur die wichtigsten Optionen. **Erweiterte Einstellungen** blendet den Rest ein; die Wahl wird sofort gespeichert.
+
+| Option | Modus | Bedeutung |
+|---|---|---|
+| Auflösung, Bilder pro Sekunde, Cliplänge | Einfach | Darunter steht die geschätzte Dateigröße pro Clip |
+| Hotkey | Einfach | Feld auswählen und die gewünschte Kombination drücken |
+| Mit Windows starten | Einfach | Autostart nur für den aktuellen Benutzer, immer minimiert |
+| Speicherordner, Ordner öffnen | Einfach | Ordner öffnen markiert den neuesten Clip |
+| Qualität · Bitrate | Erweitert | Performance (kleinere Dateien), Ausgewogen, Qualität (schärfer in schnellen Szenen) |
+| Desktop-Audio, Mikrofon | Erweitert | Separate Spuren plus Wiedergabe-Mix |
+| Kurzer Beep bei gespeichertem Clip | Erweitert | Abschaltbarer Erfolgston, standardmäßig aktiviert |
+| Nur im Tray starten | Erweitert | Kein Einstellungsfenster beim Start |
+| Replay-Puffer beim App-Start aktivieren | Erweitert | Standardmäßig an; unabhängig vom Windows-Autostart |
+| Nach Spiel, Liste aktualisieren | Erweitert | Clip-Ordner eines Spiels öffnen |
+
+Die Bitrate wird aus Auflösung, FPS und Qualitätsstufe berechnet. Mehr Pixel und mehr Bilder kosten mehr Bits, aber nicht proportional, weil H.264 bei höherer Auflösung und Bildrate effizienter wird. Referenz: Ausgewogen 1080p60 = 15 Mbit/s; Performance ×0,6, Qualität ×1,6; begrenzt auf 2,5–100 Mbit/s. Die Größenschätzung enthält alle Audiospuren und etwas Container-Overhead; ruhige Inhalte werden meist etwas kleiner.
+
+| Ausgewogen | 30 FPS | 60 FPS | 120 FPS |
+|---|---|---|---|
+| 720p | 4,5 | 7,5 | 12,5 Mbit/s |
+| 1080p | 9 | 15 | 25 Mbit/s |
+| 1440p | 14,5 | 24,5 | 41 Mbit/s |
+| 2160p | 29 | 48,5 | 82 Mbit/s |
 
 **Übernehmen** speichert Änderungen. Einstellungen liegen in `%LOCALAPPDATA%\MonoClip\settings.json`. Updates behalten sie und deine Clips. Bei einem anderen Programmordner den Windows-Autostart einmal aus- und wieder einschalten.
 
@@ -55,7 +72,7 @@ Videos/MonoClip/
     └── Zeitstempel_zufallskennung.mkv
 ```
 
-Die Zuordnung benutzt das tatsächlich gehookte Spiel, nicht beliebige Fenstertitel. Neue Clips bestehen ausschließlich aus **MKV-Dateien**. JSON-Begleitdateien älterer Versionen werden nicht mehr benötigt und können entfernt werden. Die Bibliothek wird nur beim Öffnen oder auf Wunsch aktualisiert; `.pending` erscheint nicht als Spiel.
+Die Zuordnung benutzt das tatsächlich gehookte Spiel, nicht beliebige Fenstertitel. Aufnahmen normaler App-Fenster (Discord, Browser …) landen unter `Desktop`. Neue Clips bestehen ausschließlich aus **MKV-Dateien**. JSON-Begleitdateien älterer Versionen werden nicht mehr benötigt und können entfernt werden. Die Bibliothek wird nur beim Öffnen oder auf Wunsch aktualisiert; `.pending` erscheint nicht als Spiel.
 
 Audio verwendet die Windows-Standardausgabe und das Windows-Standardmikrofon:
 

@@ -13,21 +13,46 @@ void Test(string name, Action test)
 }
 
 
-Test("1080p60 uses automatic 12 Mbps budget", () => Equal(12000, CapturePolicy.BitrateKbps(1920,1080,60)));
-Test("automatic bitrate scales pixels and frame rate", () =>
+Test("balanced 1080p60 uses 15 Mbps reference budget", () => Equal(15000, CapturePolicy.BitrateKbps(1920,1080,60)));
+Test("automatic bitrate scales pixels and frame rate sublinearly", () =>
 {
-    Equal(6000, CapturePolicy.BitrateKbps(1920,1080,30));
-    Equal(24000, CapturePolicy.BitrateKbps(1920,1080,120));
+    Equal(9000, CapturePolicy.BitrateKbps(1920,1080,30));
+    Equal(25000, CapturePolicy.BitrateKbps(1920,1080,120));
+    Equal(7500, CapturePolicy.BitrateKbps(1280,720,60));
+    Equal(24500, CapturePolicy.BitrateKbps(2560,1440,60));
+    Equal(48500, CapturePolicy.BitrateKbps(3840,2160,60));
+    True(CapturePolicy.BitrateKbps(1920,1080,120) < 2 * CapturePolicy.BitrateKbps(1920,1080,60), "doubling frames must cost less than double");
+    True(CapturePolicy.BitrateKbps(3840,2160,60) < 4 * CapturePolicy.BitrateKbps(1920,1080,60), "quadrupling pixels must cost less than quadruple");
 });
-Test("automatic bitrate rounds to nearest thousand", () =>
+Test("quality presets order bitrate performance < balanced < quality", () =>
 {
-    Equal(5000, CapturePolicy.BitrateKbps(1280,720,60));
-    Equal(21000, CapturePolicy.BitrateKbps(2560,1440,60));
+    Equal(9000, CapturePolicy.BitrateKbps(1920,1080,60,QualityPreset.Performance));
+    Equal(24000, CapturePolicy.BitrateKbps(1920,1080,60,QualityPreset.Quality));
+    foreach (var (w, h) in new[] { (1280,720), (1920,1080), (2560,1440), (3840,2160) })
+        foreach (var fps in new[] { 30, 60, 120 })
+        {
+            int p = CapturePolicy.BitrateKbps(w,h,fps,QualityPreset.Performance), b = CapturePolicy.BitrateKbps(w,h,fps), q = CapturePolicy.BitrateKbps(w,h,fps,QualityPreset.Quality);
+            True(p < b && (b < q || q == 100000), $"preset order broken at {w}x{h}@{fps}: {p}/{b}/{q}");
+            True(p % 500 == 0 && b % 500 == 0 && q % 500 == 0, "bitrate not rounded to 500 kbps");
+        }
+    Equal(15000, CapturePolicy.BitrateKbps(new AppSettings()));
+    Equal(24000, CapturePolicy.BitrateKbps(new AppSettings { Quality = QualityPreset.Quality }));
 });
 Test("automatic bitrate clamps to safe encoder limits", () =>
 {
-    Equal(4000, CapturePolicy.BitrateKbps(1280,720,30));
-    Equal(80000, CapturePolicy.BitrateKbps(3840,2160,120));
+    Equal(2500, CapturePolicy.BitrateKbps(1280,720,30,QualityPreset.Performance));
+    Equal(100000, CapturePolicy.BitrateKbps(3840,2160,120,QualityPreset.Quality));
+});
+Test("estimated clip size covers video, every audio track and keyframe slack", () =>
+{
+    var s = new AppSettings();
+    Equal(3, CapturePolicy.AudioTracks(s)); Equal(1, CapturePolicy.AudioTracks(s with { DesktopAudio = false, Microphone = false }));
+    var expected = (15000 + 3 * 160) * 1000d * 30.5 / 8 / (1024 * 1024) * 1.02;
+    True(Math.Abs(CapturePolicy.EstimatedClipMegabytes(s) - expected) < 0.001, "unexpected 1080p60 30 s estimate " + CapturePolicy.EstimatedClipMegabytes(s));
+    True(CapturePolicy.EstimatedClipMegabytes(s with { ClipSeconds = 60 }) > 1.9 * CapturePolicy.EstimatedClipMegabytes(s), "length not reflected");
+    True(CapturePolicy.EstimatedClipMegabytes(s with { Quality = QualityPreset.Performance }) < CapturePolicy.EstimatedClipMegabytes(s), "quality not reflected");
+    True(CapturePolicy.EstimatedClipMegabytes(s with { Microphone = false }) < CapturePolicy.EstimatedClipMegabytes(s), "audio tracks not reflected");
+    True(CapturePolicy.BufferMegabytes(s) > CapturePolicy.EstimatedClipMegabytes(s), "RAM buffer smaller than one clip");
 });
 Test("settings expose required safe defaults", () =>
 {
@@ -38,7 +63,8 @@ Test("settings expose required safe defaults", () =>
     {
         ["Width"] = 1920, ["Height"] = 1080, ["Fps"] = 60, ["ClipSeconds"] = 30,
         ["Hotkey"] = "Ctrl+Shift+F9", ["Microphone"] = true, ["DesktopAudio"] = true,
-        ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = false,
+        ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = true,
+        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false,
         ["MicrophoneDevice"] = "default", ["DesktopDevice"] = "default",
         ["ClipsDirectory"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip")
     };
@@ -129,6 +155,38 @@ Test("saved game folders contain only video files and no metadata sidecars",()=>
     try{var source=Path.Combine(dir,"replay.mkv");File.WriteAllBytes(source,new byte[]{1,2,3,4});var clip=ClipLibrary.Store(source,Path.Combine(dir,"clips"),new("Test Game","game.exe","private title","game"),new(),"AMD");
         True(File.Exists(clip.Path),"clip missing");True(!Directory.EnumerateFiles(Path.Combine(dir,"clips"),"*",SearchOption.AllDirectories).Any(p=>!p.EndsWith(".mkv")),"metadata sidecar pollutes clip folder");Equal(1,ClipLibrary.GetGames(Path.Combine(dir,"clips")).Count);
     }finally{Directory.Delete(dir,true);}
+});
+Test("quality preset persists as readable text and legacy settings default to balanced",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-quality-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var file=Path.Combine(dir,"settings.json");File.WriteAllText(file,"{\"StartBufferOnLaunch\":false}");var legacy=SettingsStore.Load(file);Equal(QualityPreset.Balanced,legacy.Quality);Equal(false,legacy.StartBufferOnLaunch);Equal(false,legacy.AdvancedMode);
+        SettingsStore.Save(file,new AppSettings{Quality=QualityPreset.Performance,AdvancedMode=true});True(File.ReadAllText(file).Contains("\"Performance\""),"quality not stored as text");var back=SettingsStore.Load(file);Equal(QualityPreset.Performance,back.Quality);Equal(true,back.AdvancedMode);
+        Throws<ArgumentException>(()=>new AppSettings{Quality=(QualityPreset)7}.Validate());
+    }finally{Directory.Delete(dir,true);}
+});
+Test("latest clip is the newest video across game folders, never staging",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-latest-"+Guid.NewGuid());
+    try{Equal<string?>(null,ClipLibrary.LatestClip(dir));Directory.CreateDirectory(dir);Equal<string?>(null,ClipLibrary.LatestClip(dir));
+        string Make(string folder,string name,int minutesAgo){var d=Path.Combine(dir,folder);Directory.CreateDirectory(d);var f=Path.Combine(d,name);File.WriteAllText(f,"fixture");File.SetLastWriteTimeUtc(f,DateTime.UtcNow.AddMinutes(-minutesAgo));return f;}
+        Make("Desktop","old.mkv",30);var newest=Make("Game","new.mkv",1);Make("Game","older.mkv",10);Make(".pending","raw.mkv",0);Make("Desktop","notes.txt",0);
+        Equal<string?>(newest,ClipLibrary.LatestClip(dir));
+    }finally{if(Directory.Exists(dir))Directory.Delete(dir,true);}
+});
+Test("cursor target: hooked game, other window, desktop or keep",()=>{
+    WindowInfo W(string cls,string exe,bool tool=false,int w=1280,int h=720)=>new(cls,"Title",exe,tool,w,h);
+    Equal(CaptureKind.Game,CaptureTargetPolicy.Decide(W("UnrealWindow","VALORANT-Win64-Shipping.exe"),"valorant-win64-shipping.exe"));
+    Equal(CaptureKind.Window,CaptureTargetPolicy.Decide(W("Chrome_WidgetWin_1","Discord.exe"),"VALORANT-Win64-Shipping.exe"));
+    Equal(CaptureKind.Window,CaptureTargetPolicy.Decide(W("UnrealWindow","VALORANT-Win64-Shipping.exe"),""));
+    Equal(CaptureKind.Desktop,CaptureTargetPolicy.Decide(null,"game.exe"));
+    Equal(CaptureKind.Desktop,CaptureTargetPolicy.Decide(W("Progman","explorer.exe"),""));
+    Equal(CaptureKind.Desktop,CaptureTargetPolicy.Decide(W("Shell_TrayWnd","explorer.exe"),""));
+    Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("#32768","Discord.exe"),""));
+    Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("tooltips_class32","Discord.exe"),""));
+    Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("WindowsForms10.Window.808","MonoClip.exe",tool:true),""));
+    Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("Popup","app.exe",w:40,h:20),""));
+    Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("Protected","",w:800,h:600),""));
+});
+Test("window selector escapes separators like libobs",()=>{
+    Equal("Server#3A #22general | Discord:Chrome_WidgetWin_1:Discord.exe",CaptureTargetPolicy.EncodeWindow(new("Chrome_WidgetWin_1","Server: #general | Discord","Discord.exe",false,800,600)));
 });
 // NEXT_TEST
 Console.WriteLine($"RESULT {count - failures}/{count} passed");

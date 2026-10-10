@@ -19,6 +19,7 @@
     <Compile Include="../../src/MonoClip.Windows/UI/TrayAppContext.cs" Link="TrayAppContext.cs" Condition="Exists('../../src/MonoClip.Windows/UI/TrayAppContext.cs')" />
     <Compile Include="../../src/MonoClip.Windows/UI/MonoMenuColors.cs" Link="MonoMenuColors.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/MonoButton.cs" Link="MonoButton.cs" />
+    <Compile Include="../../src/MonoClip.Windows/UI/MonoSlider.cs" Link="MonoSlider.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/ClipBeepSound.cs" Link="ClipBeepSound.cs" />
     <ProjectReference Include="../../src/MonoClip.Core/MonoClip.Core.csproj" />
   </ItemGroup>

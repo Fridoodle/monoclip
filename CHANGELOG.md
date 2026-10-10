@@ -1,5 +1,14 @@
 # Änderungen
 
+## 0.1.6 Beta
+
+- Aufnahme folgt dem Fenster unter der Maus: gehooktes Spiel, sonst nur das jeweilige App-Fenster (WGC), über Desktop/Taskleiste der Monitor unter der Maus. Ein Spiel im Hintergrund landet nicht mehr im Clip, wenn man z. B. in Discord ist.
+- Spiel-Hook und Fensteraufnahme bleiben beim Umschalten aktiv; ein neues Fenster wird verdeckt vorgewärmt, damit kein schwarzes Bild entsteht. Menüs, Tooltips und Startmenü lösen keinen Wechsel aus.
+- Einfache und erweiterte Einstellungen; einfach: Auflösung, FPS, Cliplänge, Hotkey, Autostart, Ordner.
+- Qualitätsregler Performance / Ausgewogen / Qualität mit neu berechneter Bitrate (Ausgewogen 1080p60 = 15 statt 12 Mbit/s) und geschätzter Dateigröße pro Clip.
+- Replay-Puffer startet bei neuen Konfigurationen standardmäßig mit der App. Bestehende Einstellungen bleiben unverändert.
+- Tray → Clip-Ordner öffnen markiert den zuletzt gespeicherten Clip im Explorer.
+
 ## 0.1.5 Beta
 
 - **Portabler Ein-Datei-Download:** Ein ZIP enthält App, .NET und die Aufnahme-Runtime. Entpacken, `MonoClip.exe` starten – kein `Runtime einrichten.cmd`, kein zweiter Download, keine Installation und keine Adminrechte.

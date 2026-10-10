@@ -27,5 +27,12 @@ public static class ClipLibrary
         return new(destination,context.Game,time,settings.ClipSeconds,settings.Width,settings.Height,settings.Fps,encoder,context);
     }
     static void TryDelete(string path){try{File.Delete(path);}catch(IOException){}catch(UnauthorizedAccessException){}}
+    // Newest saved clip below root (any game folder), ignoring hidden staging folders.
+    public static string? LatestClip(string root)
+    {
+        if(!Directory.Exists(root))return null;
+        var folders=Directory.EnumerateDirectories(root).Where(d=>!Path.GetFileName(d).StartsWith('.')).Prepend(root);
+        return folders.SelectMany(d=>Directory.EnumerateFiles(d,"*.mkv")).Select(f=>new FileInfo(f)).OrderByDescending(f=>f.LastWriteTimeUtc).ThenByDescending(f=>f.Name,StringComparer.Ordinal).FirstOrDefault()?.FullName;
+    }
     public static IReadOnlyList<string> GetGames(string root)=>Directory.Exists(root)?Directory.EnumerateDirectories(root).Where(d=>!Path.GetFileName(d).StartsWith('.')&&Directory.EnumerateFiles(d,"*.mkv").Any()).Select(Path.GetFileName).OfType<string>().Order(StringComparer.OrdinalIgnoreCase).ToArray():[];
 }

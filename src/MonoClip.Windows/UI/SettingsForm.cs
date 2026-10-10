@@ -1,5 +1,4 @@
 using MonoClip.Core;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 namespace MonoClip.Windows.UI;
 
@@ -10,7 +9,8 @@ public sealed class SettingsForm : Form
     const int LogicalWidth = 660, LogicalHeight = 900, LogicalMinWidth = 380, LogicalMinHeight = 320, NarrowContent = 430, WidePadding = 28, NarrowPadding = 16;
     AppSettings original; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
     readonly ComboBox resolution = new(), fps = new(), games = new(); readonly NumericUpDown duration = new(); readonly TextBox hotkey = new(), directory = new();
-    readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new();
+    readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new();
+    readonly MonoSlider quality = new("Performance", "Ausgewogen", "Qualität"); readonly List<Control> advancedOnly = [];
     readonly Label status = new(), target = new(), budget = new(), feedback = new(); readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton();
     readonly TableLayoutPanel table = new() { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(WidePadding, 18, WidePadding, 18) };
     readonly Panel scroll = new() { Dock = DockStyle.Fill, AutoScroll = true };
@@ -35,28 +35,30 @@ public sealed class SettingsForm : Form
         status.AutoSize = true; status.Font = new Font("Segoe UI Semibold", 11); Full(status); target.AutoSize = true; target.ForeColor = Muted; Full(target);
         var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = new Padding(0, 10, 0, 4) };
         StyleButton(toggleButton); toggleButton.Click += (_, _) => Run(toggle); StyleButton(clipButton); clipButton.Text = "Clip speichern"; clipButton.Click += (_, _) => Run(saveClip); actions.Controls.Add(toggleButton); actions.Controls.Add(clipButton); Full(actions);
+        Check(advanced, "Erweiterte Einstellungen", settings.AdvancedMode); advanced.Margin = new Padding(0, 10, 0, 0); advanced.CheckedChanged += (_, _) => { ApplyMode(); Run(() => { var next = original with { AdvancedMode = advanced.Checked }; saveSettings(next); original = next; }); };
         Section("AUFNAHME");
         StyleCombo(resolution); resolution.Items.AddRange(new object[] { "1280 × 720", "1920 × 1080", "2560 × 1440", "3840 × 2160" }); resolution.SelectedIndex = settings.Width switch { 1280 => 0, 1920 => 1, 2560 => 2, _ => 3 }; Row("Auflösung", resolution);
         StyleCombo(fps); fps.Items.AddRange(new object[] { 30, 60, 120 }); fps.SelectedItem = settings.Fps; Row("Bilder pro Sekunde", fps);
         duration.Minimum = 5; duration.Maximum = 300; duration.Value = settings.ClipSeconds; duration.BackColor = Black; duration.ForeColor = White; duration.BorderStyle = BorderStyle.FixedSingle; Row("Cliplänge · Sekunden", duration);
         hotkey.ReadOnly = true; StyleText(hotkey); hotkey.Text = settings.Hotkey; hotkey.AccessibleName = "Clip-Tastenkombination";
         hotkey.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); hotkey.Text = new Hotkey(mods, e.KeyCode).ToString(); }; Row("Hotkey · drücken zum Ändern", hotkey);
+        quality.BackColor = Black; quality.ForeColor = White; quality.Value = (int)settings.Quality; quality.AccessibleName = "Qualität und Bitrate"; quality.AccessibleDescription = quality.ValueText; quality.MinimumSize = new Size(0, quality.GetPreferredSize(Size.Empty).Height); quality.ValueChanged += (_, _) => UpdateBudget(); Row("Qualität · Bitrate", quality, true);
         budget.AutoSize = true; budget.ForeColor = Muted; Full(budget); resolution.SelectedIndexChanged += (_, _) => UpdateBudget(); fps.SelectedIndexChanged += (_, _) => UpdateBudget(); duration.ValueChanged += (_, _) => UpdateBudget();
-        Section("AUDIO");
-        Check(desktop, "Desktop-Audio aufnehmen", settings.DesktopAudio); Check(mic, "Mikrofon aufnehmen", settings.Microphone);
-        Full(new Label { Text = "Windows-Standardgeräte. Separate Desktop- und Mikrofonspur; zusätzlich eine gemischte Spur für normale Wiedergabe.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 4, 0, 8) });
-        Check(clipBeep, "Kurzer Beep bei gespeichertem Clip", settings.ClipBeep);
-        Section("HINTERGRUND"); Check(minimized, "Nur im Tray starten", settings.StartMinimized); Check(bufferOnLaunch, "Replay-Puffer beim App-Start aktivieren", settings.StartBufferOnLaunch); Check(autostart, "Mit Windows starten · immer minimiert", settings.StartWithWindows);
+        Section("AUDIO", true);
+        Check(desktop, "Desktop-Audio aufnehmen", settings.DesktopAudio, true); Check(mic, "Mikrofon aufnehmen", settings.Microphone, true); desktop.CheckedChanged += (_, _) => UpdateBudget(); mic.CheckedChanged += (_, _) => UpdateBudget();
+        Full(new Label { Text = "Windows-Standardgeräte. Separate Desktop- und Mikrofonspur; zusätzlich eine gemischte Spur für normale Wiedergabe.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 4, 0, 8) }, true);
+        Check(clipBeep, "Kurzer Beep bei gespeichertem Clip", settings.ClipBeep, true);
+        Section("HINTERGRUND"); Check(autostart, "Mit Windows starten · immer minimiert", settings.StartWithWindows); Check(minimized, "Nur im Tray starten", settings.StartMinimized, true); Check(bufferOnLaunch, "Replay-Puffer beim App-Start aktivieren", settings.StartBufferOnLaunch, true);
         Section("CLIPS"); StyleText(directory); directory.Text = settings.ClipsDirectory;
         var pathPanel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill }; pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); directory.Dock = DockStyle.Fill; directory.Margin = new Padding(0, 3, 6, 3); pathPanel.Controls.Add(directory, 0, 0);
         var browse = Button("…", () => { using var dialog = new FolderBrowserDialog { InitialDirectory = directory.Text, Description = "Ordner für lokale Clips" }; if (dialog.ShowDialog(this) == DialogResult.OK) directory.Text = dialog.SelectedPath; }); browse.MinimumSize = new Size(Px(42), Px(30)); browse.Margin = Padding.Empty; pathPanel.Controls.Add(browse, 1, 0); Row("Speicherordner", pathPanel);
-        StyleCombo(games); games.Items.Add("Alle Clips"); games.SelectedIndex = 0; Row("Nach Spiel", games);
-        var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Ordner öffnen", () => Run(() => { var path = games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory; Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }))); libraryActions.Controls.Add(Button("Liste aktualisieren", RefreshGames)); Full(libraryActions);
+        StyleCombo(games); games.Items.Add("Alle Clips"); games.SelectedIndex = 0; Row("Nach Spiel", games, true);
+        var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Ordner öffnen", () => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory)))); var refresh = Button("Liste aktualisieren", RefreshGames); libraryActions.Controls.Add(refresh); advancedOnly.Add(refresh); Full(libraryActions);
         feedback.AutoSize = true; feedback.ForeColor = Muted; feedback.Margin = new Padding(0, 8, 0, 0); Full(feedback);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
         scroll.ClientSizeChanged += (_, _) => Relayout(); DpiChanged += (_, _) => { narrow = null; Relayout(); };
         scroll.HandleCreated += (_, _) => DarkScrollbars(scroll.Handle);
-        engine.StatusChanged += EngineStatus; UpdateBudget(); UpdateStatus(); Relayout();
+        engine.StatusChanged += EngineStatus; ApplyMode(); UpdateStatus(); Relayout();
     }
 
     int Px(int logical) => LogicalToDeviceUnits(logical);
@@ -130,20 +132,24 @@ public sealed class SettingsForm : Form
     }
 
     void EngineStatus(object? sender, EventArgs args) { if (!IsDisposed) UpdateStatus(); }
-    void Row(string text, Control control)
+    void Row(string text, Control control, bool advancedOnly = false)
     {
         var label = new Label { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 9, 12, 9) }; control.Dock = DockStyle.Fill; control.Margin = new Padding(0, 4, 0, 4);
         // Two rows per entry: side by side uses the first one, the narrow layout stacks the control into the second.
         int row = table.RowCount; table.RowCount += 2; table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         table.Controls.Add(label, 0, row); table.Controls.Add(control, 1, row); rows.Add((label, control, row));
+        if (advancedOnly) this.advancedOnly.AddRange([label, control]);
     }
-    void Full(Control control)
+    void Full(Control control, bool advancedOnly = false)
     {
         int row = table.RowCount++; table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); control.Anchor = AnchorStyles.Left; table.Controls.Add(control, 0, row); table.SetColumnSpan(control, 2);
         if (control is Label or FlowLayoutPanel) fullWidth.Add(control);
+        if (advancedOnly) this.advancedOnly.Add(control);
     }
-    void Section(string text) { Full(new Label { Text = text, AutoSize = true, ForeColor = Muted, Font = new Font("Segoe UI Semibold", 9), Margin = new Padding(0, 19, 0, 7) }); }
-    void Check(CheckBox box, string text, bool value) { box.FlatStyle = FlatStyle.Flat; box.FlatAppearance.BorderColor = Muted; box.FlatAppearance.CheckedBackColor = Black; box.Text = text; box.Checked = value; box.AutoSize = true; box.Margin = new Padding(0, 4, 0, 4); Full(box); }
+    void Section(string text, bool advancedOnly = false) { Full(new Label { Text = text, AutoSize = true, ForeColor = Muted, Font = new Font("Segoe UI Semibold", 9), Margin = new Padding(0, 19, 0, 7) }, advancedOnly); }
+    void Check(CheckBox box, string text, bool value, bool advancedOnly = false) { box.FlatStyle = FlatStyle.Flat; box.FlatAppearance.BorderColor = Muted; box.FlatAppearance.CheckedBackColor = Black; box.Text = text; box.Checked = value; box.AutoSize = true; box.Margin = new Padding(0, 4, 0, 4); Full(box, advancedOnly); }
+    // Simple mode keeps resolution, FPS, length, hotkey, autostart and folder; the rest is advanced.
+    void ApplyMode() { table.SuspendLayout(); foreach (var control in advancedOnly) control.Visible = advanced.Checked; table.ResumeLayout(); UpdateBudget(); }
     static void StyleCombo(ComboBox c)
     {
         c.DropDownStyle = ComboBoxStyle.DropDownList; c.BackColor = Color.FromArgb(24, 24, 24); c.ForeColor = White; c.FlatStyle = FlatStyle.Flat;
@@ -152,8 +158,17 @@ public sealed class SettingsForm : Form
     static void StyleText(TextBox t) { t.BackColor = Color.FromArgb(24, 24, 24); t.ForeColor = White; t.BorderStyle = BorderStyle.FixedSingle; }
     void StyleButton(Button b) { b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Line; b.BackColor = Black; b.ForeColor = White; b.AutoSize = true; b.Padding = new Padding(9, 4, 9, 4); b.MinimumSize = new Size(Px(100), Px(34)); b.Cursor = Cursors.Hand; b.UseVisualStyleBackColor = false; }
     Button Button(string text, Action action) { var b = new MonoButton { Text = text }; StyleButton(b); b.Click += (_, _) => action(); return b; }
-    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked }; s.Validate(); return s; }
-    void UpdateBudget() { if (fps.SelectedItem == null) return; var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)fps.SelectedItem, ClipSeconds = (int)duration.Value }; budget.Text = $"Automatisch: {CapturePolicy.BitrateKbps(s.Width, s.Height, s.Fps) / 1000d:0.#} Mbit/s · RAM-Pufferlimit {CapturePolicy.BufferMegabytes(s)} MB\nGPU-Encoder · keine laufenden Video-Schreibzugriffe · SDR"; }
+    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked }; s.Validate(); return s; }
+    void UpdateBudget()
+    {
+        if (fps.SelectedItem == null) return; var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) };
+        var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)fps.SelectedItem, ClipSeconds = (int)duration.Value, Quality = (QualityPreset)quality.Value, DesktopAudio = desktop.Checked, Microphone = mic.Checked };
+        var estimate = $"Geschätzte Dateigröße ≈ {FormatSize(CapturePolicy.EstimatedClipMegabytes(s))} pro Clip";
+        budget.Text = advanced.Checked
+            ? $"{quality.ValueText}: {CapturePolicy.BitrateKbps(s) / 1000d:0.#} Mbit/s Video + {CapturePolicy.AudioTracks(s)} × {CapturePolicy.AudioKbpsPerTrack} kbit/s Audio\n{estimate} · RAM-Pufferlimit {CapturePolicy.BufferMegabytes(s)} MB\nGPU-Encoder · keine laufenden Video-Schreibzugriffe · SDR"
+            : estimate;
+    }
+    internal static string FormatSize(double megabytes) => megabytes >= 1024 ? $"{megabytes / 1024:0.0} GB" : megabytes >= 10 ? $"{megabytes:0} MB" : $"{megabytes:0.0} MB";
     public void UpdateStatus() { status.Text = (engine.IsRunning ? "●  " : "○  ") + engine.Status; target.Text = engine.CaptureTarget + "  /  " + engine.EncoderName; toggleButton.Text = engine.IsRunning ? "Puffer stoppen" : "Puffer starten"; clipButton.Enabled = engine.IsRunning; }
     public void Feedback(string text) { feedback.Text = text; }
     void Run(Action action) { try { action(); UpdateStatus(); } catch (Exception e) { Feedback(e.Message); } }
