@@ -130,7 +130,7 @@ cd monoclip
 .\build.ps1
 ```
 
-Ergebnis: `dist/MonoClip/MonoClip.exe` (Starter, `src/MonoClip.Launcher`; mit Visual-Studio-Build-Tools als NativeAOT-EXE mit ca. 1,3 MB, sonst als Single-File-EXE mit ca. 10,7 MB) mit der App in `dist/MonoClip/app` und der fertige portable Download `dist/MonoClip-<Version>-win-x64-portable.zip`. `tools/prepare-runtime.py` lädt dafür einmalig das gepinnte offizielle OBS-Release (SHA256-geprüft) und übernimmt nur die benötigten Module. Das Paket ist selbstenthalten; zum Starten wird kein separat installiertes .NET benötigt.
+Ergebnis: `dist/MonoClip/MonoClip.exe` (Starter, `src/MonoClip.Launcher`; mit Visual-Studio-Build-Tools als NativeAOT-EXE mit ca. 1,1 MB, sonst als Single-File-EXE mit ca. 10,7 MB) mit der App in `dist/MonoClip/app` und der fertige portable Download `dist/MonoClip-<Version>-win-x64-portable.zip`. `tools/prepare-runtime.py` lädt dafür einmalig das gepinnte offizielle OBS-Release (SHA256-geprüft) und übernimmt nur die benötigten Module. Das Paket ist selbstenthalten; zum Starten wird kein separat installiertes .NET benötigt.
 
 Releases: Ein Tag `v<Version>` (passend zu `<Version>` in `MonoClip.Windows.csproj`) baut das ZIP in der Windows-CI, prüft einen echten Start aus einem frisch entpackten Ordner und veröffentlicht ZIP, `SHA256SUMS.txt` und das offizielle OBS-Quellarchiv als GitHub-Release.
 
