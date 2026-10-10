@@ -27,7 +27,7 @@ public sealed class ObsHost : IDisposable
         lock (LogLock) { logWriter?.Dispose(); logWriter = null; }
         if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 2_000_000) File.Move(LogPath, LogPath + ".old", true);
         foreach (var required in new[] { "obs.dll", "obs-ffmpeg-mux.exe", "libobs-d3d11.dll", "runtime/data/libobs/default.effect" })
-            if (!File.Exists(Path.Combine(root, required))) throw new FileNotFoundException("Aufnahme-Runtime unvollständig (" + required + " fehlt). Das komplette MonoClip-ZIP erneut in einen neuen Ordner entpacken.", required);
+            if (!File.Exists(Path.Combine(root, required))) throw new FileNotFoundException("Capture runtime incomplete (" + required + " missing). Extract the complete MonoClip ZIP into a new folder.", required);
         if (!SetDllDirectory(root)) throw new System.ComponentModel.Win32Exception();
         NativeLibrary.Load(Path.Combine(root, "obs.dll"));
         Obs.base_set_log_handler(LogDelegate, IntPtr.Zero);

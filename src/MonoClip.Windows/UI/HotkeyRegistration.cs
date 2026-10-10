@@ -33,7 +33,7 @@ public sealed class HotkeyRegistration : NativeWindow, IDisposable
         ObjectDisposedException.ThrowIf(disposed, this); if(Current == hotkey) return;
         var id = nextId++; if(nextId >= 0xBFFF) nextId = 1;
         if(!RegisterHotKey(Handle, id, hotkey.Modifiers | Hotkey.NoRepeat, (uint)hotkey.Key))
-            throw new InvalidOperationException("Diese Tastenkombination ist bereits von einer anderen App belegt.");
+            throw new InvalidOperationException("This key combination is already used by another app.");
         if(currentId != 0) UnregisterHotKey(Handle, currentId);
         currentId = id; Current = hotkey;
         // Seed only relevant state once; background raw delivery needs no timer/polling.
@@ -45,7 +45,7 @@ public sealed class HotkeyRegistration : NativeWindow, IDisposable
     bool Recording => Application.OpenForms.Cast<Form>().OfType<SettingsForm>().Any(form => form.Visible && form.Handle == GetForegroundWindow() && RecorderFocused(form));
     static bool RecorderFocused(Control control)
     {
-        if(control is TextBox && control.Focused && control.AccessibleName == "Clip-Tastenkombination") return true;
+        if(control is TextBox && control.Focused && control.AccessibleName == "Clip hotkey") return true;
         foreach(Control child in control.Controls) if(child.ContainsFocus && RecorderFocused(child)) return true;
         return false;
     }

@@ -38,7 +38,7 @@ try {
         using var share=new MonoClip.Windows.Share.ClipShare();var steps=new List<string>();
         var task=share.ShareAsync(source,TimeSpan.FromMinutes(5),new Progress<string>(steps.Add));var clock=System.Diagnostics.Stopwatch.StartNew();
         while(!task.IsCompleted&&clock.Elapsed.TotalSeconds<180){Application.DoEvents();Thread.Sleep(20);}
-        var info=task.GetAwaiter().GetResult();Console.WriteLine($"TIME Link kopierbar nach {clock.Elapsed.TotalSeconds:0.0} s");Console.WriteLine("INFO "+string.Join(" | ",steps)+" | "+info.Url);
+        var info=task.GetAwaiter().GetResult();Console.WriteLine($"TIME link ready after {clock.Elapsed.TotalSeconds:0.0} s");Console.WriteLine("INFO "+string.Join(" | ",steps)+" | "+info.Url);
         if(!info.Url.StartsWith("https://")||!info.Url.Contains(".trycloudflare.com/")||(info.ExpiresAt-DateTimeOffset.Now).TotalMinutes is <4.9 or >5.01)throw new Exception("unexpected share "+info);
         var local=Directory.EnumerateFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","share"),"*.mp4").Single();var expected=File.ReadAllBytes(local);
         using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(60)};
@@ -64,7 +64,7 @@ try {
             var bounds=Screen.FromHandle(game.MainWindowHandle).Bounds;Cursor.Position=new System.Drawing.Point(bounds.Left+bounds.Width/2,bounds.Top+bounds.Height/2);
             using var engine=new ClipEngine();var s=new MonoClip.Core.AppSettings{ClipSeconds=5,DesktopAudio=false,Microphone=false,ClipsDirectory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","GameVerificationClips")};
             MonoClip.Core.ClipRecord? clip=null;engine.ClipSaved+=(_,e)=>clip=e.Clip;engine.Start(s);var clock=System.Diagnostics.Stopwatch.StartNew();bool saved=false;
-            while(clock.Elapsed.TotalSeconds<20&&clip==null){Application.DoEvents();Thread.Sleep(25);if(clock.Elapsed.TotalSeconds>10&&!saved){if(!engine.CaptureTarget.StartsWith("Spiel"))throw new Exception("Game not auto-detected: "+engine.CaptureTarget+" "+engine.Status);engine.SaveClip();saved=true;}}
+            while(clock.Elapsed.TotalSeconds<20&&clip==null){Application.DoEvents();Thread.Sleep(25);if(clock.Elapsed.TotalSeconds>10&&!saved){if(!engine.CaptureTarget.StartsWith("Game"))throw new Exception("Game not auto-detected: "+engine.CaptureTarget+" "+engine.Status);engine.SaveClip();saved=true;}}
             if(clip==null||clip.Context.CaptureMode!="game")throw new Exception("game clip was not indexed as game");
             Console.WriteLine("PASS automatic "+(args.Contains("--exclusive")?"exclusive fullscreen":"borderless")+" game clip "+clip.Path+" frames="+engine.TotalFrames+" drops="+engine.DroppedFrames);engine.Stop();return 0;
         }finally{if(!game.HasExited)game.Kill();}

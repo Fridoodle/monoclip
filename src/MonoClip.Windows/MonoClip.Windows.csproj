@@ -10,8 +10,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>MonoClip.ico</ApplicationIcon>
     <AssemblyName>MonoClip</AssemblyName>
-    <Version>0.1.8</Version>
-    <SatelliteResourceLanguages>de;en</SatelliteResourceLanguages>
+    <Version>0.1.9</Version>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- A tray app with a tiny managed heap: no background GC thread, no PGO instrumentation re-JIT. -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>

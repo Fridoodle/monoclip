@@ -23,7 +23,7 @@ public sealed class ClipShare : IClipSharer
     public async Task<ShareInfo> ShareAsync(string clipPath, TimeSpan duration, IProgress<string>? progress = null)
     {
         if (duration < TimeSpan.FromMinutes(SharePolicy.MinMinutes) || duration > TimeSpan.FromMinutes(SharePolicy.MaxMinutes)) throw new ArgumentOutOfRangeException(nameof(duration));
-        if (!File.Exists(clipPath)) throw new FileNotFoundException("Clip nicht gefunden.", clipPath);
+        if (!File.Exists(clipPath)) throw new FileNotFoundException("Clip not found.", clipPath);
         Stop(); var cancel = new CancellationTokenSource(); starting = cancel; Changed?.Invoke(this, EventArgs.Empty);
         var token = SharePolicy.NewToken(); var target = Path.Combine(Root, token + ".mp4"); Task remux = Task.CompletedTask;
         try
@@ -31,20 +31,20 @@ public sealed class ClipShare : IClipSharer
             Directory.CreateDirectory(Root); copy = target;
             var local = server = new ClipShareServer(target, SharePolicy.RequestPath(token, clipPath), cacheSeconds: (int)duration.TotalSeconds) { Ready = false }; local.Start();
             // Cloudflare needs about 6 s to assign a link: prepare the MP4 in the meantime, not before.
-            progress?.Report("Clip wird vorbereitet · Cloudflare vergibt den Link …");
+            progress?.Report("Preparing clip · requesting link…");
             remux = Task.Run(() => ClipRemux.ToFastStartMp4(clipPath, target), cancel.Token);
             CloudflaredTunnel t;
             for (int attempt = 1; ; attempt++)
             {
                 t = tunnel = await CloudflaredTunnel.StartAsync(local.Port, progress, cancel.Token);
                 await remux; local.Ready = true; cancel.Token.ThrowIfCancellationRequested();
-                progress?.Report("Link wird geprüft …");
+                progress?.Report("Checking link…");
                 // A working tunnel answers within about a second of registering. One that has no public DNS record
                 // (Cloudflare sometimes hands those out, more often after many links in a row) never does.
                 var problem = await ProbeUntilReachableAsync(t.PublicUrl + local.RequestPath, TimeSpan.FromSeconds(6), cancel.Token);
                 if (problem == null) break;
-                if (attempt == 2) throw new InvalidOperationException($"Cloudflare hat gerade keinen funktionierenden Link vergeben ({problem}). Bitte in ein paar Minuten erneut teilen.");
-                progress?.Report("Cloudflare antwortet nicht · neuer Link wird angefordert …");
+                if (attempt == 2) throw new InvalidOperationException($"Cloudflare did not provide a working link ({problem}). Try again in a few minutes.");
+                progress?.Report("No response · requesting a new link…");
                 tunnel = null; t.Dispose();
             }
             t.Exited += (_, _) => ui.Post(_ => { if (ReferenceEquals(tunnel, t)) Stop(); }, null);
@@ -83,7 +83,7 @@ public sealed class ClipShare : IClipSharer
     }
     static async Task<(bool Ok, bool Usable, string? Detail)> FamilyAsync(IPAddress[] addresses, string url, CancellationToken token)
     {
-        int streak = 0, connectFailures = 0; bool responded = false; string last = "keine Antwort";
+        int streak = 0, connectFailures = 0; bool responded = false; string last = "no response";
         try
         {
             while (true)
@@ -111,7 +111,7 @@ public sealed class ClipShare : IClipSharer
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
         try { using var r = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, url), cancel); return (r.IsSuccessStatusCode, true, "HTTP " + (int)r.StatusCode); }
         catch (HttpRequestException e) { return (false, false, e.Message); }
-        catch (TaskCanceledException) when (!cancel.IsCancellationRequested) { return (false, false, "Zeitüberschreitung"); }
+        catch (TaskCanceledException) when (!cancel.IsCancellationRequested) { return (false, false, "timeout"); }
     }
     public void Stop()
     {

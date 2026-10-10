@@ -14,7 +14,7 @@ public static class Mp4FastStart
         using var source = File.OpenRead(input);
         var boxes = TopLevel(source);
         int moov = boxes.FindIndex(b => b.Type == "moov"), mdat = boxes.FindIndex(b => b.Type == "mdat");
-        if (moov < 0 || mdat < 0) throw new InvalidDataException("Keine gültige MP4-Datei (moov/mdat fehlt).");
+        if (moov < 0 || mdat < 0) throw new InvalidDataException("Not a valid MP4 file (moov/mdat missing).");
         using var target = File.Create(output);
         if (moov < mdat) { source.Position = 0; source.CopyTo(target); return false; }
         var index = new byte[boxes[moov].Size]; source.Position = boxes[moov].Offset; source.ReadExactly(index);
@@ -35,7 +35,7 @@ public static class Mp4FastStart
             long size = BinaryPrimitives.ReadUInt32BigEndian(header); var type = System.Text.Encoding.ASCII.GetString(header, 4, 4);
             if (size == 1) { s.ReadExactly(header, 8, 8); size = (long)BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(8)); }
             else if (size == 0) size = s.Length - offset;
-            if (size < 8 || offset + size > s.Length) throw new InvalidDataException("Ungültige MP4-Boxgröße.");
+            if (size < 8 || offset + size > s.Length) throw new InvalidDataException("Invalid MP4 box size.");
             boxes.Add(new(type, offset, size)); offset += size;
         }
         return boxes;
@@ -47,19 +47,19 @@ public static class Mp4FastStart
             long size = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(at)); var type = System.Text.Encoding.ASCII.GetString(data, at + 4, 4); int header = 8;
             if (size == 1) { size = (long)BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(at + 8)); header = 16; }
             else if (size == 0) size = end - at;
-            if (size < header || at + size > end) throw new InvalidDataException("Ungültige MP4-Indexbox.");
+            if (size < header || at + size > end) throw new InvalidDataException("Invalid MP4 index box.");
             int body = at + header, boxEnd = (int)(at + size);
             if (Containers.Contains(type)) Patch(data, body, boxEnd, delta);
             else if (type is "stco" or "co64")
             {
                 // Full box: version/flags, entry count, then 32- or 64-bit absolute chunk offsets.
                 int count = (int)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(body + 4)), width = type == "stco" ? 4 : 8;
-                if (body + 8 + (long)count * width > boxEnd) throw new InvalidDataException("Ungültige Chunk-Tabelle.");
+                if (body + 8 + (long)count * width > boxEnd) throw new InvalidDataException("Invalid chunk table.");
                 for (int i = 0, p = body + 8; i < count; i++, p += width)
                     if (width == 4)
                     {
                         long moved = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(p)) + delta;
-                        if (moved > uint.MaxValue) throw new NotSupportedException("Clip zu groß für 32-Bit-MP4-Offsets.");
+                        if (moved > uint.MaxValue) throw new NotSupportedException("Clip too large for 32-bit MP4 offsets.");
                         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(p), (uint)moved);
                     }
                     else BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(p), BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(p)) + (ulong)delta);

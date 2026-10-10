@@ -149,7 +149,7 @@ internal static class Program
                 using var ctx=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F4",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"settings.json"),false,played.Add,sharer){CopyText=_=>{}};
                 var fake=Path.Combine(dir,"notes.mp4");File.WriteAllText(fake,"definitely not a video, just text");
                 ctx.ShareClip(fake,chosen:true).GetAwaiter().GetResult();Equal<string?>(null,sharer.SharedClip);Equal("Error",string.Join(",",played));
-                var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;if(!tray.Text.Contains("Keine gültige"))throw new Exception("error reason not shown in tooltip: "+tray.Text);
+                var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;if(!tray.Text.Contains("Not a valid"))throw new Exception("error reason not shown in tooltip: "+tray.Text);
                 var real=Path.Combine(dir,"real.mp4");File.WriteAllBytes(real,new byte[]{0,0,0,24,(byte)'f',(byte)'t',(byte)'y',(byte)'p',(byte)'i',(byte)'s',(byte)'o',(byte)'m'});played.Clear();
                 ctx.ShareClip(real,chosen:true).GetAwaiter().GetResult();Equal(real,sharer.SharedClip);Equal("Upload,Link",string.Join(",",played));
             }finally{Directory.Delete(dir,true);}
@@ -176,14 +176,14 @@ internal static class Program
         Test("Tray shares the newest clip, copies the link and stops on demand",()=>{
             var dir=Path.Combine(Path.GetTempPath(),"MonoClip-share-ui-"+Guid.NewGuid());Directory.CreateDirectory(Path.Combine(dir,"Game"));var clip=Path.Combine(dir,"Game","newest.mkv");File.WriteAllText(clip,"fixture");
             try{var sharer=new FakeSharer();string? copied=null;
-                using(var plain=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F7",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"a.json"))){var t=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plain)!;if(t.ContextMenuStrip!.Items.Cast<ToolStripItem>().Any(i=>i.Text!.Contains("teilen")&&i.Available))throw new Exception("share item shown without a sharer");}
+                using(var plain=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F7",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"a.json"))){var t=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plain)!;if(t.ContextMenuStrip!.Items.Cast<ToolStripItem>().Any(i=>i.Text!.Contains("Share")&&i.Available))throw new Exception("share item shown without a sharer");}
                 using var ctx=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F8",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"settings.json"),false,_=>{},sharer){CopyText=text=>copied=text};
                 var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var items=tray.ContextMenuStrip!.Items.Cast<ToolStripItem>().ToList();
-                var share=(ToolStripMenuItem)items.Single(i=>i.Text!.StartsWith("Letzten Clip teilen"));Equal("Letzten Clip teilen · 15 Min.",share.Text);if(items.IndexOf(share)<1||items[^1].Text!="Beenden")throw new Exception("share item misplaced");
+                var share=(ToolStripMenuItem)items.Single(i=>i.Text!.StartsWith("Share last clip"));Equal("Share last clip (15 min)",share.Text);if(items.IndexOf(share)<1||items[^1].Text!="Exit")throw new Exception("share item misplaced");
                 share.PerformClick();Application.DoEvents();
-                Equal(clip,sharer.SharedClip);Equal(TimeSpan.FromMinutes(15),sharer.Duration);Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Teilen beenden · noch 15 Min."))throw new Exception("active share not shown: "+share.Text);
-                var again=(ToolStripMenuItem)items.Single(i=>i.Text=="Link erneut kopieren");copied=null;again.PerformClick();Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);
-                share.PerformClick();Application.DoEvents();Equal<object?>(null,sharer.Current);if(!share.Text!.StartsWith("Letzten Clip teilen"))throw new Exception("stopped share still shown");
+                Equal(clip,sharer.SharedClip);Equal(TimeSpan.FromMinutes(15),sharer.Duration);Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Stop sharing (15 min left)"))throw new Exception("active share not shown: "+share.Text);
+                var again=(ToolStripMenuItem)items.Single(i=>i.Text=="Copy link");copied=null;again.PerformClick();Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);
+                share.PerformClick();Application.DoEvents();Equal<object?>(null,sharer.Current);if(!share.Text!.StartsWith("Share last clip"))throw new Exception("stopped share still shown");
             }finally{Directory.Delete(dir,true);}
         });
         Test("Tray symbol is a black tile with a filled or hollow white dot",()=>{
@@ -215,10 +215,10 @@ internal static class Program
             if(F("shareButton").Visible)throw new Exception("share button shown without sharing support");
             string? picked=null;form.AttachSharing(sharer,()=>toggles++,()=>copies++,path=>picked=path);
             if(!F("pickButton").Enabled)throw new Exception("pick button not enabled with sharing support");var share=(Button)F("shareButton");var copy=(Button)F("copyLinkButton");
-            if(!share.Visible||share.Text!="Letzten Clip teilen · 20 Min."||copy.Visible)throw new Exception("idle share controls wrong: "+share.Text);
+            if(!share.Visible||share.Text!="Share last clip (20 min)"||copy.Visible)throw new Exception("idle share controls wrong: "+share.Text);
             share.PerformClick();Equal(1,toggles);
             sharer.ShareAsync("clip.mkv",TimeSpan.FromMinutes(20));form.UpdateStatus();
-            var status=(Label)F("shareStatus");if(!copy.Visible||share.Text!="Teilen beenden"||!status.Visible||!status.Text.Contains("noch 20 Min.")||!status.Text.Contains("fake-host.trycloudflare.com"))throw new Exception("active share not shown: "+status.Text);
+            var status=(Label)F("shareStatus");if(!copy.Visible||share.Text!="Stop sharing"||!status.Visible||!status.Text.Contains("20 min left")||!status.Text.Contains("fake-host.trycloudflare.com"))throw new Exception("active share not shown: "+status.Text);
             copy.PerformClick();Equal(1,copies);
             Equal(20,form.ReadSettings().ShareMinutes);((NumericUpDown)F("shareMinutes")).Value=30;Equal(30,form.ReadSettings().ShareMinutes);
             Equal(false,form.ReadSettings().AutoShare);((CheckBox)F("autoShare")).Checked=true;Equal(true,form.ReadSettings().AutoShare);

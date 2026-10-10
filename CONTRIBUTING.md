@@ -1,12 +1,14 @@
-# Beiträge
+# Contributing
 
-Bitte zuerst ein Issue für größere Änderungen eröffnen. Capture- und Export-Änderungen benötigen Tests, einschließlich Fehler-/Shutdown-Pfaden. Neue P/Invoke-Aufrufe gegen die tatsächlich gebündelte DLL prüfen; ein normaler Happy-Path-Test findet keine selten ausgelösten fehlenden Exports.
+Open an issue before larger changes.
 
-Vor einem Pull Request:
+Before a pull request:
 
-1. Core-/UI-Tests ausführen.
-2. Windows-Release-Build ohne neue Compilerwarnungen erstellen.
-3. Bei Capture-/Export-Änderungen reale native Tests durchführen und Video/Audio prüfen.
-4. Keine persönlichen Clips, Einstellungen, Logs, Tokens, Build-Ausgaben oder Drittanbieter-Binärdateien committen.
+1. Run the core and UI tests.
+2. Build the app in Release without new warnings.
+3. For capture or export changes, run the native tests and check the resulting clips.
+4. Do not commit clips, settings, logs, tokens, build output or third-party binaries.
 
-Bugreports sollten Windows-Version, GPU/Treiber, Spiel/Fenstermodus, Einstellungen und minimale Reproduktionsschritte enthalten. Logs vor dem Teilen anonymisieren. Für Sicherheitsprobleme keine sensiblen Daten öffentlich posten.
+New P/Invoke calls must exist in the bundled DLLs (`MonoClip.NativeTests.exe --exports`).
+
+Bug reports should include the Windows version, GPU and driver, game and window mode, MonoClip version and steps to reproduce. Remove personal data from logs before posting.

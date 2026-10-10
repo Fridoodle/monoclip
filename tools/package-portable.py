@@ -12,7 +12,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ["MonoClip.exe", "obs.dll", "obs-ffmpeg-mux.exe", "obs-amf-test.exe", "libobs-d3d11.dll", "runtime/data/libobs/default.effect",
        "runtime/obs-plugins/64bit/win-capture.dll", "runtime/data/obs-plugins/win-capture/graphics-hook64.dll"]
 REQUIRED = ["MonoClip.exe"] + ["app/" + name for name in APP]
-FORBIDDEN = {"install-runtime.ps1", "Runtime einrichten.cmd"}
 
 
 def project_version() -> str:
@@ -57,7 +56,7 @@ def main() -> None:
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for file in sorted(app.rglob("*")):
             relative = file.relative_to(app)
-            if not file.is_file() or file.suffix in {".pdb", ".log"} or relative.as_posix() in extras or file.name in FORBIDDEN:
+            if not file.is_file() or file.suffix in {".pdb", ".log"} or relative.as_posix() in extras or file.suffix in {".ps1", ".cmd"}:
                 continue
             z.write(file, pathlib.PurePosixPath("MonoClip") / relative.as_posix()); count += 1
         for name, source in extras.items():

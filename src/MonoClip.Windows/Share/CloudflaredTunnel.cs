@@ -23,7 +23,7 @@ internal sealed class CloudflaredTunnel : IDisposable
     public static async Task<CloudflaredTunnel> StartAsync(int port, IProgress<string>? progress, CancellationToken cancel)
     {
         var exe = await EnsureBinaryAsync(progress, cancel);
-        progress?.Report("Cloudflare vergibt den Link …");
+        progress?.Report("Requesting link…");
         var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true, WorkingDirectory = Path.GetDirectoryName(exe)! };
         foreach (var arg in new[] { "tunnel", "--no-autoupdate", "--url", $"http://127.0.0.1:{port}" }) info.ArgumentList.Add(arg);
         var process = new Process { StartInfo = info, EnableRaisingEvents = true };
@@ -48,17 +48,17 @@ internal sealed class CloudflaredTunnel : IDisposable
             process.BeginErrorReadLine(); process.BeginOutputReadLine();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel); timeout.CancelAfter(StartTimeout);
             try { tunnel.PublicUrl = await ready.Task.WaitAsync(timeout.Token); tunnel.RegisteredAt = DateTime.UtcNow; }
-            catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { throw new TimeoutException("Cloudflare-Tunnel hat nicht rechtzeitig geantwortet. " + tunnel.LastLog()); }
+            catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { throw new TimeoutException("Cloudflare tunnel did not respond in time. " + tunnel.LastLog()); }
             return tunnel;
         }
         catch { tunnel.Dispose(); throw; }
     }
-    string LastLog() { lock (log) return log.Count == 0 ? "" : "Letzte Meldung: " + log.Last(); }
+    string LastLog() { lock (log) return log.Count == 0 ? "" : "Last message: " + log.Last(); }
     // Account-less tunnels are rate limited per connection; say so instead of showing a raw log line.
     string ExitReason()
     {
         bool limited; lock (log) limited = log.Any(l => l.Contains("429") || l.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase));
-        return limited ? "Cloudflare hat in kurzer Zeit zu viele Links von diesem Anschluss erstellt. Bitte ein paar Minuten warten und erneut teilen." : "cloudflared wurde beendet. " + LastLog();
+        return limited ? "Too many links created from this connection. Wait a few minutes and try again." : "cloudflared exited. " + LastLog();
     }
     public string[] RecentLog { get { lock (log) return log.ToArray(); } }
 
@@ -69,7 +69,7 @@ internal sealed class CloudflaredTunnel : IDisposable
         var partial = ExePath + ".part";
         try
         {
-            progress?.Report("cloudflared wird einmalig geladen …");
+            progress?.Report("Downloading cloudflared (one time)…");
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
             using (var response = await http.GetAsync(Url, HttpCompletionOption.ResponseHeadersRead, cancel))
             {
@@ -80,11 +80,11 @@ internal sealed class CloudflaredTunnel : IDisposable
                 for (int n; (n = await source.ReadAsync(buffer, cancel)) > 0;)
                 {
                     await file.WriteAsync(buffer.AsMemory(0, n), cancel); done += n;
-                    int percent = total > 0 ? (int)(done * 100 / total) : -1; if (percent / 10 != lastPercent / 10) { lastPercent = percent; progress?.Report($"cloudflared wird einmalig geladen … {percent} %"); }
+                    int percent = total > 0 ? (int)(done * 100 / total) : -1; if (percent / 10 != lastPercent / 10) { lastPercent = percent; progress?.Report($"Downloading cloudflared (one time)… {percent}%"); }
                 }
             }
             // Pinned official release: anything else is never executed.
-            if (await HashAsync(partial, cancel) != Sha256) throw new InvalidDataException("cloudflared-Download hat eine falsche Prüfsumme und wurde verworfen.");
+            if (await HashAsync(partial, cancel) != Sha256) throw new InvalidDataException("cloudflared download has a wrong checksum and was discarded.");
             File.Move(partial, ExePath, true);
             return ExePath;
         }

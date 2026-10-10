@@ -5,12 +5,12 @@ using System.Runtime.InteropServices;
 // because OBS looks for its helper programs next to the running EXE.
 // Plain blittable Win32 calls instead of System.Diagnostics.Process keep the starter tiny (NativeAOT).
 var app = Path.Combine(AppContext.BaseDirectory, "app", "MonoClip.exe");
-if (!File.Exists(app)) return Fail("Der Ordner \"app\" fehlt oder ist unvollständig. Bitte das komplette MonoClip-ZIP erneut in einen neuen Ordner entpacken.");
+if (!File.Exists(app)) return Fail("The \"app\" folder is missing or incomplete. Extract the complete MonoClip ZIP into a new folder.");
 // CreateProcessW may write into the command line buffer, so it must be a mutable, terminated copy.
 var command = (CommandLine.Build(app, args) + '\0').ToCharArray();
 var startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>() };
 if (!CreateProcessW(app, command, IntPtr.Zero, IntPtr.Zero, false, 0, IntPtr.Zero, Path.GetDirectoryName(app)!, ref startup, out var process))
-    return Fail("MonoClip konnte nicht gestartet werden (Windows-Fehler " + Marshal.GetLastPInvokeError() + ").");
+    return Fail("Could not start MonoClip (Windows error " + Marshal.GetLastPInvokeError() + ").");
 CloseHandle(process.Process); CloseHandle(process.Thread);
 return 0;
 

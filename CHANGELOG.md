@@ -1,74 +1,62 @@
-# Änderungen
+# Changelog
+
+## 0.1.9 Beta
+
+- App, documentation and repository are now English only.
+- Shorter labels and status messages; removed the subtitle from the settings window.
+- German resource files are no longer shipped.
 
 ## 0.1.8 Beta
 
-- **Neue Clips automatisch teilen** (erweitert, standardmäßig aus): nach jedem Clip wird der Link erstellt und in die Zwischenablage kopiert; ein noch laufender Link wird durch den neuen Clip ersetzt.
-- **Clip auswählen und teilen …**: beliebige eigene Videos teilen. Nur MKV/MP4 bis 500 MB; geprüft wird der Dateiinhalt (Matroska-/MP4-Signatur), nicht nur die Endung.
-- Keine Pop-up-Benachrichtigungen mehr. Stattdessen vier neue, weichere Soundeffekte (Clip, Upload, Link fertig, Fehler), die sich nicht gegenseitig abschneiden. „Soundeffekte“ schaltet alle ab.
-- Link schneller fertig (gemessen ca. 8,6 statt 12+ Sekunden; den größten Teil, ca. 6 s, braucht Cloudflare zum Vergeben des Links): Das MP4 wird parallel vorbereitet, die Prüfung läuft für IPv4/IPv6 gleichzeitig und braucht nur noch ca. 1 s. Tunnel ohne funktionierenden Link erkennt MonoClip nach 6 s und fordert automatisch einen neuen an.
-- Tray-Symbol zeigt den Status: drehender Bogen beim Erstellen des Links, kleiner Punkt oben rechts solange der Link online ist, „!“ für einige Sekunden bei Fehlern; der Grund steht im Tooltip und im Einstellungsfenster. Auch Export- und Aufnahmefehler im Hintergrund werden so gemeldet.
+- Option to share every new clip automatically and copy the link.
+- Share any MKV/MP4 file up to 500 MB; the file content is verified.
+- Sound cues (clip, upload, link ready, error) replace pop-up notifications.
+- Tray icon shows when a link is being created, when it is online and when an error occurred.
+- Links are ready faster (about 9 s instead of 12+ s). Broken tunnels are detected and replaced automatically.
 
 ## 0.1.7 Beta
 
-- Tray → **Letzten Clip teilen · 15 Min.**: verlustfreie MP4-Kopie mit vorgezogenem Index, Bereitstellung nur auf 127.0.0.1 und ein Cloudflare-Quick-Tunnel. Link landet in der Zwischenablage; ohne Portfreigabe, Konto oder Adminrechte, auch hinter DS-Lite/CGNAT.
-- Nach 15 Minuten, per „Teilen beenden“ oder beim Beenden werden Tunnel, Server und Kopie entfernt; ein Job-Objekt beendet cloudflared auch bei einem Absturz. Maximal 6 parallele Verbindungen.
-- cloudflared 2026.9.3 wird erst beim ersten Teilen von GitHub geladen und gegen einen festen SHA256 geprüft.
-- Der Link wird vor dem Kopieren über IPv4- und IPv6-Edge geprüft, ohne den neuen Hostnamen vorzeitig im Windows-DNS-Cache als „nicht vorhanden“ zu speichern.
-- Teilen auch im Einstellungsfenster neben „Puffer stoppen“/„Clip speichern“, mit „Link kopieren“ und Restzeit; Dauer in den erweiterten Einstellungen 5–30 Minuten (Standard 15). Benachrichtigungen nennen Wartezeit, Ablaufzeit und Ende.
-- Eigenes App-Icon für EXE, Taskleiste und Fenster. Tray-Symbol ohne Eckklammern: schwarze Kachel mit Punkt (aufnehmend) bzw. Ring (gestoppt).
-- Auflösung und Bildrate sind jetzt erweiterte Einstellungen (Standard 1080p60).
-- Aufgeräumter Programmordner: nur noch `MonoClip.exe` (Starter, ca. 0,15 s) sowie `app\` und `info\` statt rund 300 losen Dateien. Autostart und `--settings` funktionieren unverändert.
-- Deutlich kleiner: Download 71 → 54 MB, entpackt 298 → 150 Dateien. Nie referenzierte .NET-Assemblies und Debugger-/Crashdump-Dateien entfallen (ohne Code aus benutzten Assemblies zu schneiden); unbenutzte OBS-Teile (WebRTC, Lua, OpenGL, QSV-Test, Streaming-Plugin `obs-outputs`) werden nicht mehr ausgeliefert. Release-Starter per NativeAOT (ca. 1,1 MB).
-- Effizienter im Betrieb: Einstellungen per JSON-Source-Generator, Fenster-/Monitor-Infos werden pro Fenster zwischengespeichert statt viermal pro Sekunde neu abgefragt, OBS-Log mit dauerhaft geöffnetem Writer, kein Hintergrund-GC-Thread.
+- Share the last clip as a temporary link (5–30 min) through a Cloudflare quick tunnel.
+- App icon; tray icon is a dot (recording) or ring (stopped).
+- Resolution and frame rate moved to the advanced settings.
+- Portable folder contains only `MonoClip.exe`, `app\` and `info\`.
+- Download size reduced from 71 MB to 54 MB; unused .NET and OBS files are no longer shipped.
+- Lower CPU use in the capture loop and faster startup.
 
 ## 0.1.6 Beta
 
-- Aufnahme folgt dem Fenster unter der Maus: gehooktes Spiel, sonst nur das jeweilige App-Fenster (WGC), über Desktop/Taskleiste der Monitor unter der Maus. Ein Spiel im Hintergrund landet nicht mehr im Clip, wenn man z. B. in Discord ist.
-- Spiel-Hook und Fensteraufnahme bleiben beim Umschalten aktiv; ein neues Fenster wird verdeckt vorgewärmt, damit kein schwarzes Bild entsteht. Menüs, Tooltips und Startmenü lösen keinen Wechsel aus.
-- Einfache und erweiterte Einstellungen; einfach: Auflösung, FPS, Cliplänge, Hotkey, Autostart, Ordner.
-- Qualitätsregler Performance / Ausgewogen / Qualität mit neu berechneter Bitrate (Ausgewogen 1080p60 = 15 statt 12 Mbit/s) und geschätzter Dateigröße pro Clip.
-- Replay-Puffer startet bei neuen Konfigurationen standardmäßig mit der App. Bestehende Einstellungen bleiben unverändert.
-- Tray → Clip-Ordner öffnen markiert den zuletzt gespeicherten Clip im Explorer.
+- Capture follows the window under the cursor instead of a fullscreen game in the background.
+- Simple and advanced settings.
+- Quality presets with an estimated file size per clip.
+- The buffer starts on launch by default.
+- "Open clip folder" selects the latest clip.
 
 ## 0.1.5 Beta
 
-- **Portabler Ein-Datei-Download:** Ein ZIP enthält App, .NET und die Aufnahme-Runtime. Entpacken, `MonoClip.exe` starten – kein `Runtime einrichten.cmd`, kein zweiter Download, keine Installation und keine Adminrechte.
-- Runtime schlanker: nur benötigte OBS-Module, Sprachdateien nur Deutsch/Englisch (73 statt 388 Runtime-Dateien), keine .NET-Sprachordner außer Deutsch/Englisch.
-- Klare Meldung, falls Dateien der Aufnahme-Runtime fehlen (z. B. unvollständig entpackt oder von einem Virenscanner entfernt).
-- Einstellungsfenster funktioniert in jeder Größe: Texte umbrechen statt abgeschnitten zu werden, in schmalen Fenstern stehen Beschriftung und Feld untereinander, Mindestgröße 380 × 320, das Fenster öffnet nie größer als der Bildschirm und skaliert mit der Windows-Anzeigeskalierung.
-- Schwarze Titelleiste statt weißer (Windows 11 exakt schwarz, Windows 10 dunkel) und dunkle Scrollleiste.
-- CI baut das portable ZIP, prüft alle libobs-Exports gegen die gebündelte DLL und startet die App aus einem frisch entpackten Ordner mit Leerzeichen und Klammern im Pfad. Tags `v*` veröffentlichen das Release automatisch.
+- Single portable ZIP that includes the capture runtime; no setup script.
+- Smaller runtime and a clear error when runtime files are missing.
+- Settings window adapts to small sizes and display scaling; dark title bar.
+- CI builds and starts the portable ZIP and publishes releases from tags.
 
 ## 0.1.4 Beta
 
-- CMD-Launcher übergibt keinen fehlerhaft gequoteten Ordnerpfad mehr; PowerShell verwendet den eigenen Skriptordner.
-- Regressionstest reproduziert die echte CMD-/PowerShell-Argumentübergabe, auch bei Leerzeichen, Umlauten, Klammern und Ampersand im Pfad.
-- Windows-CI prüft zusätzlich eine vollständige Runtime-Einrichtung über die CMD-Datei mit offiziellem Download und SHA256-Prüfung.
-- Aufnahme und Hotkey-Fix aus 0.1.3 unverändert.
+- Fixed the runtime setup script for paths with spaces and special characters.
 
 ## 0.1.3 Beta
 
-- Ereignisgesteuerter Raw-Input-Zustellweg ergänzt globale Windows-Hotkeys, ohne Dauer-Polling oder Adminrechte.
-- Gemeinsame Wiederholungs-/Doppel-Auslösungssperre für beide Eingabewege; linke/rechte Modifier getrennt berücksichtigt.
-- Während der Hotkey-Eingabe im sichtbaren Einstellungsfenster wird kein Clip ausgelöst.
-- Zusätzliche Regressionstests für Zustellreihenfolge, verzögerte Nachrichten, Konflikte, Fokus und Ressourcenfreigabe.
-- Physischer Nutzertest: drei Tastendrücke ergaben drei vollständig dekodierbare Clips, davon zwei unter LoL und einer beim Fensterwechsel unter Desktop. Dies ist keine universelle Anti-Cheat-Kompatibilitätszusage.
+- Hotkeys also work in games that swallow Windows hotkey messages (Raw Input fallback).
+- No clip is saved while a new hotkey is being entered.
 
 ## 0.1.2 Beta
 
-- Keine JSON-Begleitdateien mehr neben Clips; Zuordnung weiterhin über Spielordner.
-- Interne temporäre Ordner werden nicht als Spiel angezeigt.
-- Export-/Shutdown-Tests auf reine Videodateien umgestellt.
-- Öffentliche Dokumentation, Build-Anleitung und Repository-Struktur ergänzt.
+- Clips are saved without JSON sidecar files.
+- Temporary folders no longer appear as games.
 
 ## 0.1.1 Beta
 
-- Falschen OBS-Funktionsnamen im Monitor-Fallback korrigiert.
-- Stabiler Windows-Monitoralias bei fehlender Geräte-GUID.
-- Erfolgs-Popup entfernt und optionalen kurzen Beep ergänzt.
+- Fixed the monitor capture fallback.
+- Replaced the success pop-up with an optional beep.
 
 ## 0.1.0 Beta
 
-- Native Windows-Tray-App mit GPU-Replay-Puffer, automatischer Aufnahme, getrennten Audiospuren und Spielordnern.
-- Konfigurierbare Auflösung, FPS, Cliplänge und globaler Hotkey.
-- Minimierter Autostart und monochrome Einstellungen.
+- First release: tray app with GPU replay buffer, game detection, separate audio tracks and per-game folders.

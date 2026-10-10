@@ -29,12 +29,12 @@ public sealed class TrayAppContext : ApplicationContext
         this.engine = engine; this.settings = settings with { }; this.settingsPath = settingsPath;
         BuildIcons(); shareTicker.Tick += (_, _) => UpdateTray(); animation.Tick += (_, _) => Animate();
         var menu = new ContextMenuStrip { BackColor = Color.FromArgb(16, 16, 16), ForeColor = Color.White, ShowImageMargin = false, Renderer = new ToolStripProfessionalRenderer(new MonoMenuColors()) };
-        toggleItem = new ToolStripMenuItem("Puffer starten", null, (_, _) => Run(Toggle)); menu.Items.Add(toggleItem); saveItem = new ToolStripMenuItem("Clip speichern", null, (_, _) => Run(engine.SaveClip)); menu.Items.Add(saveItem);
-        shareItem = new ToolStripMenuItem($"Letzten Clip teilen · {settings.ShareMinutes} Min.", null, (_, _) => ToggleShare()) { Visible = sharer != null }; menu.Items.Add(shareItem); copyLinkItem = new ToolStripMenuItem("Link erneut kopieren", null, (_, _) => Run(CopyShareLink)) { Visible = false }; menu.Items.Add(copyLinkItem); menu.Opening += (_, _) => UpdateShareItems();
-        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Einstellungen", null, (_, _) => ShowSettings()); menu.Items.Add("Clip-Ordner öffnen", null, (_, _) => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip))); menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Beenden", null, (_, _) => ExitThread());
-        tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Puffer gestoppt", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettings();
+        toggleItem = new ToolStripMenuItem("Start buffer", null, (_, _) => Run(Toggle)); menu.Items.Add(toggleItem); saveItem = new ToolStripMenuItem("Save clip", null, (_, _) => Run(engine.SaveClip)); menu.Items.Add(saveItem);
+        shareItem = new ToolStripMenuItem($"Share last clip ({settings.ShareMinutes} min)", null, (_, _) => ToggleShare()) { Visible = sharer != null }; menu.Items.Add(shareItem); copyLinkItem = new ToolStripMenuItem("Copy link", null, (_, _) => Run(CopyShareLink)) { Visible = false }; menu.Items.Add(copyLinkItem); menu.Opening += (_, _) => UpdateShareItems();
+        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Settings", null, (_, _) => ShowSettings()); menu.Items.Add("Open clip folder", null, (_, _) => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip))); menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Exit", null, (_, _) => ExitThread());
+        tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettings();
         hotkeys = new(() => Run(engine.SaveClip));
-        try { hotkeys.Set(Hotkey.Parse(settings.Hotkey)); } catch (Exception e) { Fail("Hotkey nicht verfügbar: " + e.Message); }
+        try { hotkeys.Set(Hotkey.Parse(settings.Hotkey)); } catch (Exception e) { Fail("Hotkey unavailable: " + e.Message); }
         engine.StatusChanged += StatusChanged; engine.ClipSaved += ClipSaved; if (sharer != null) sharer.Changed += ShareChanged;
         if (settings.StartBufferOnLaunch) Run(() => engine.Start(this.settings));
         UpdateTray(); if (showSettings || !settings.StartMinimized) ShowSettings();
@@ -95,13 +95,13 @@ public sealed class TrayAppContext : ApplicationContext
             if (next.StartWithWindows != old.StartWithWindows) { WindowsIntegration.SetAutostart(next.StartWithWindows, Environment.ProcessPath!); autostartChanged = true; }
             SettingsStore.Save(settingsPath, next); settings = next with { }; UpdateTray();
         }
-        catch (Exception original) { var rollbackErrors = new List<string>(); try { hotkeys.Set(Hotkey.Parse(old.Hotkey)); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (applied) try { engine.Apply(old); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (autostartChanged) try { WindowsIntegration.SetAutostart(old.StartWithWindows, Environment.ProcessPath!); } catch (Exception e) { rollbackErrors.Add(e.Message); } throw new InvalidOperationException(original.Message + (rollbackErrors.Count == 0 ? "" : " Rücksetzen fehlgeschlagen: " + string.Join("; ", rollbackErrors)), original); }
+        catch (Exception original) { var rollbackErrors = new List<string>(); try { hotkeys.Set(Hotkey.Parse(old.Hotkey)); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (applied) try { engine.Apply(old); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (autostartChanged) try { WindowsIntegration.SetAutostart(old.StartWithWindows, Environment.ProcessPath!); } catch (Exception e) { rollbackErrors.Add(e.Message); } throw new InvalidOperationException(original.Message + (rollbackErrors.Count == 0 ? "" : " Rollback failed: " + string.Join("; ", rollbackErrors)), original); }
     }
     // Background failures (export, unexpected stop) only show up as a status text: make them heard.
     void StatusChanged(object? sender, EventArgs args)
     {
         var status = engine.Status;
-        if (status != lastStatus && (status.StartsWith("Fehler") || status.StartsWith("Clip-Fehler") || status.StartsWith("Clip bleibt erhalten") || status.StartsWith("Aufnahme wurde unerwartet") || status.StartsWith("Clip-Speicherung dauert"))) Fail(status);
+        if (status != lastStatus && (status.StartsWith("Error") || status.StartsWith("Clip error") || status.StartsWith("Clip kept at") || status.StartsWith("Capture stopped unexpectedly") || status.StartsWith("Saving the clip is taking"))) Fail(status);
         lastStatus = status; UpdateTray();
     }
     // Tray/settings button: stop a running share, otherwise share the last saved clip (or the newest on disk).
@@ -110,7 +110,7 @@ public sealed class TrayAppContext : ApplicationContext
         if (sharer == null) return;
         if (sharer.Current != null || sharer.IsStarting) { sharer.Stop(); return; }
         var clip = lastClip != null && File.Exists(lastClip) ? lastClip : ClipLibrary.LatestClip(settings.ClipsDirectory);
-        if (clip == null) { Fail("Noch kein Clip gespeichert."); return; }
+        if (clip == null) { Fail("No clip saved yet."); return; }
         _ = ShareClip(clip, chosen: false);
     }
     // Creates the link and copies it. Sounds: upload on start, link when copied, error otherwise.
@@ -119,7 +119,7 @@ public sealed class TrayAppContext : ApplicationContext
         if (sharer == null) return;
         if (chosen) { try { SharePolicy.CheckShareable(clip); } catch (ArgumentException e) { Fail(e.Message); return; } }
         int minutes = settings.ShareMinutes;
-        Cue(Sound.Upload); form?.Feedback(sharer.FirstUse ? "Link wird erstellt … beim ersten Mal wird cloudflared geladen (ca. 55 MB)." : $"Link wird erstellt … ({minutes} Min. online)");
+        Cue(Sound.Upload); form?.Feedback(sharer.FirstUse ? "Creating link… (first time: downloading cloudflared, ~55 MB)" : $"Creating link… ({minutes} min)");
         try
         {
             var progress = new Progress<string>(text => { form?.Feedback(text); SetTooltip("MonoClip · " + text); });
@@ -127,20 +127,20 @@ public sealed class TrayAppContext : ApplicationContext
             lastShare = info; lastShareMinutes = minutes;
             try { CopyText(info.Url); } catch (ExternalException) { }
             Cue(Sound.Link);
-            form?.Feedback($"Link kopiert. Online bis {info.ExpiresAt:HH:mm} Uhr ({minutes} Min.).");
+            form?.Feedback($"Link copied. Online until {info.ExpiresAt:HH:mm} ({minutes} min).");
         }
-        catch (OperationCanceledException) { form?.Feedback("Teilen abgebrochen."); }
-        catch (Exception e) { Fail("Teilen fehlgeschlagen: " + e.Message); }
+        catch (OperationCanceledException) { form?.Feedback("Sharing cancelled."); }
+        catch (Exception e) { Fail("Sharing failed: " + e.Message); }
         finally { UpdateTray(); }
     }
-    void CopyShareLink() { if (sharer?.Current is not { } c) return; CopyText(c.Url); form?.Feedback($"Link kopiert. Online bis {c.ExpiresAt:HH:mm} Uhr."); }
+    void CopyShareLink() { if (sharer?.Current is not { } c) return; CopyText(c.Url); form?.Feedback($"Link copied. Online until {c.ExpiresAt:HH:mm}."); }
     void ShareChanged(object? sender, EventArgs args)
     {
         if (disposed || sharer == null) return;
         if (lastShare != null && sharer.Current == null && !sharer.IsStarting)
         {
             bool expired = DateTimeOffset.Now >= lastShare.ExpiresAt.AddSeconds(-5);
-            form?.Feedback(expired ? $"Die {lastShareMinutes} Minuten sind um – der Clip ist nicht mehr erreichbar." : "Teilen beendet – der Clip ist nicht mehr erreichbar."); lastShare = null;
+            form?.Feedback(expired ? $"Link expired after {lastShareMinutes} min." : "Sharing stopped. The link is offline."); lastShare = null;
         }
         if (sharer.Current != null) shareTicker.Start(); else shareTicker.Stop();
         UpdateTray();
@@ -149,12 +149,12 @@ public sealed class TrayAppContext : ApplicationContext
     void UpdateShareItems()
     {
         if (sharer == null) return;
-        shareItem.Text = sharer.IsStarting ? "Teilen abbrechen" : sharer.Current is { } c ? $"Teilen beenden · noch {MinutesLeft(c)} Min." : $"Letzten Clip teilen · {settings.ShareMinutes} Min.";
+        shareItem.Text = sharer.IsStarting ? "Cancel sharing" : sharer.Current is { } c ? $"Stop sharing ({MinutesLeft(c)} min left)" : $"Share last clip ({settings.ShareMinutes} min)";
         copyLinkItem.Visible = sharer.Current != null;
     }
     void ClipSaved(object? sender, ClipSavedEventArgs args)
     {
-        lastClip = args.Clip.Path; Cue(Sound.Clip); form?.Feedback("Gespeichert: " + args.Clip.Path);
+        lastClip = args.Clip.Path; Cue(Sound.Clip); form?.Feedback("Saved: " + args.Clip.Path);
         // Auto-share replaces a link that is still online: the newest clip is the one to post.
         if (settings.AutoShare && sharer != null) { sharer.Stop(); _ = ShareClip(args.Clip.Path, chosen: false); }
     }
@@ -174,8 +174,8 @@ public sealed class TrayAppContext : ApplicationContext
     void UpdateTray()
     {
         if (disposed) return; bool active = engine.IsRunning; UpdateIcon();
-        SetTooltip(errorText != null ? "MonoClip · " + errorText : "MonoClip · " + (sharer?.IsStarting == true ? "Link wird erstellt · " : sharer?.Current is { } shared ? $"online, noch {MinutesLeft(shared)} Min. · " : "") + engine.Status);
-        toggleItem.Text = active ? "Puffer stoppen" : "Puffer starten"; saveItem.Text = $"Letzte {settings.ClipSeconds} Sekunden speichern"; saveItem.Enabled = active; UpdateShareItems(); form?.UpdateStatus();
+        SetTooltip(errorText != null ? "MonoClip · " + errorText : "MonoClip · " + (sharer?.IsStarting == true ? "Creating link · " : sharer?.Current is { } shared ? $"shared, {MinutesLeft(shared)} min left · " : "") + engine.Status);
+        toggleItem.Text = active ? "Stop buffer" : "Start buffer"; saveItem.Text = $"Save last {settings.ClipSeconds} s"; saveItem.Enabled = active; UpdateShareItems(); form?.UpdateStatus();
     }
     void Run(Action action) { try { action(); } catch (Exception e) { Fail(e.Message); } UpdateTray(); }
     protected override void ExitThreadCore() { Dispose(); base.ExitThreadCore(); }

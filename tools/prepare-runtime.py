@@ -16,8 +16,8 @@ MODULES = {"win-capture", "win-wasapi", "obs-ffmpeg", "obs-nvenc"}
 # Keep libobs-winrt.dll: win-capture loads it at runtime for Windows Graphics Capture.
 SKIP = ["qt6", "obs64.exe", "obspython", "obslua", "python", "imageformats/", "platforms/", "styles/", "sqldrivers/", "tls/",
         "datachannel", "msquic", "lua51", "obs-scripting", "obs-frontend-api", "libobs-opengl", "obs-qsv-test"]
-# Module texts fall back to en-US; MonoClip's UI is German. Other locales only add files.
-LOCALES = {"en-US.ini", "de-DE.ini"}
+# MonoClip's UI is English; other module locales only add files.
+LOCALES = {"en-US.ini"}
 REQUIRED = ["bin/64bit/obs.dll", "bin/64bit/obs-ffmpeg-mux.exe", "bin/64bit/libobs-d3d11.dll", "data/libobs/default.effect", "obs-plugins/64bit/win-capture.dll"]
 
 
