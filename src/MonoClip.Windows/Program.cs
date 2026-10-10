@@ -15,7 +15,7 @@ internal static class Program
         try { settings = SettingsStore.Load(path); } catch (Exception e) { MessageBox.Show("Einstellungen konnten nicht gelesen werden. Sichere Standardwerte werden verwendet.\n" + e.Message, "MonoClip", MessageBoxButtons.OK, MessageBoxIcon.Warning); settings = new(); }
         if (args.Contains("--minimized")) settings = settings with { StartMinimized = true };
         Application.ThreadException += (_, e) => { File.AppendAllText(Path.Combine(dir, "errors.log"), DateTimeOffset.Now + " " + e.Exception + "\n"); MessageBox.Show(e.Exception.Message, "MonoClip", MessageBoxButtons.OK, MessageBoxIcon.Error); };
-        try { using var engine = new ClipEngine(); using var app = new TrayAppContext(engine, settings, path, args.Contains("--settings")); Application.Run(app); }
+        try { using var engine = new ClipEngine(); using var app = new TrayAppContext(engine, settings, path, args.Contains("--settings"), null, new MonoClip.Windows.Share.ClipShare()); Application.Run(app); }
         catch (Exception e) { File.AppendAllText(Path.Combine(dir, "errors.log"), DateTimeOffset.Now + " " + e + "\n"); MessageBox.Show(e.Message, "MonoClip", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }

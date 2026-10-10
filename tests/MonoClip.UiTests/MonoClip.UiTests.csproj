@@ -16,6 +16,7 @@
     <Compile Include="../../src/MonoClip.Windows/UI/RawHotkeyInput.cs" Link="RawHotkeyInput.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/SettingsForm.cs" Link="SettingsForm.cs" Condition="Exists('../../src/MonoClip.Windows/UI/SettingsForm.cs')" />
     <Compile Include="../../src/MonoClip.Windows/IClipEngine.cs" Link="IClipEngine.cs" />
+    <Compile Include="../../src/MonoClip.Windows/IClipSharer.cs" Link="IClipSharer.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/TrayAppContext.cs" Link="TrayAppContext.cs" Condition="Exists('../../src/MonoClip.Windows/UI/TrayAppContext.cs')" />
     <Compile Include="../../src/MonoClip.Windows/UI/MonoMenuColors.cs" Link="MonoMenuColors.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/MonoButton.cs" Link="MonoButton.cs" />

@@ -20,6 +20,7 @@ public sealed record AppSettings
     public bool StartMinimized { get; set; } = true;
     public bool StartBufferOnLaunch { get; set; } = true;
     public bool AdvancedMode { get; set; }
+    public int ShareMinutes { get; set; } = SharePolicy.DefaultMinutes;
     public string MicrophoneDevice { get; set; } = "default";
     public string DesktopDevice { get; set; } = "default";
     public void Validate()
@@ -32,5 +33,6 @@ public sealed record AppSettings
         if (string.IsNullOrWhiteSpace(ClipsDirectory) || !Path.IsPathFullyQualified(ClipsDirectory) || ClipsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0) throw new ArgumentException("Bitte einen absoluten gültigen Clip-Ordner angeben.");
         if (string.IsNullOrWhiteSpace(MicrophoneDevice) || string.IsNullOrWhiteSpace(DesktopDevice)) throw new ArgumentException("Audiogeräte dürfen nicht leer sein.");
         if (ClipSeconds is < 5 or > 300) throw new ArgumentException("Clip duration must be between 5 and 300 seconds.");
+        if (ShareMinutes is < SharePolicy.MinMinutes or > SharePolicy.MaxMinutes) throw new ArgumentException($"Teilen-Dauer muss zwischen {SharePolicy.MinMinutes} und {SharePolicy.MaxMinutes} Minuten liegen.");
     }
 }

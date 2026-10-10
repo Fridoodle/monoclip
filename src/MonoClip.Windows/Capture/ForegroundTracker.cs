@@ -24,13 +24,20 @@ internal static class ForegroundTracker
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder name, ref int size);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    // Polled every 250 ms: cache what never changes for a monitor or window.
+    static readonly Dictionary<string, string> monitorIds = [];
+    static IntPtr cachedWindow; static uint cachedProcess; static WindowInfo? cachedInfo;
     // Monitor under the mouse cursor (the cursor marks what the user is looking at).
     public static (string Id, string Name) Monitor()
     {
         var screen = GetCursorPos(out var p) ? Screen.FromPoint(new System.Drawing.Point(p.X, p.Y)) : Screen.PrimaryScreen!;
-        var device = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
-        var found=EnumDisplayDevices(screen.DeviceName,0,ref device,1);
-        return (StableMonitorId(found?device.Id:"",screen.DeviceName),screen.DeviceName);
+        if (!monitorIds.TryGetValue(screen.DeviceName, out var id))
+        {
+            var device = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
+            var found = EnumDisplayDevices(screen.DeviceName, 0, ref device, 1);
+            monitorIds[screen.DeviceName] = id = StableMonitorId(found ? device.Id : "", screen.DeviceName);
+        }
+        return (id, screen.DeviceName);
     }
     internal static string StableMonitorId(string? deviceId,string displayName)=>string.IsNullOrWhiteSpace(deviceId)?displayName:deviceId;
     // Top-level window under the mouse cursor, or null when there is none.
@@ -38,7 +45,13 @@ internal static class ForegroundTracker
     {
         if (!GetCursorPos(out var p)) return (IntPtr.Zero, null);
         var h = WindowFromPoint(p); if (h != IntPtr.Zero) h = GetAncestor(h, GaRoot);
-        return h == IntPtr.Zero || !IsWindowVisible(h) || Cloaked(h) ? (IntPtr.Zero, null) : (h, Describe(h));
+        if (h == IntPtr.Zero || !IsWindowVisible(h) || Cloaked(h)) return (IntPtr.Zero, null);
+        // Class, executable and style belong to the window; only re-read them for a new window
+        // (or a reused handle in another process). The size is cheap and may change.
+        GetWindowThreadProcessId(h, out var pid);
+        if (h != cachedWindow || pid != cachedProcess || cachedInfo == null) { cachedInfo = Describe(h); cachedWindow = h; cachedProcess = pid; }
+        else if (GetWindowRect(h, out var r) && (r.Right - r.Left != cachedInfo.Width || r.Bottom - r.Top != cachedInfo.Height)) cachedInfo = cachedInfo with { Width = r.Right - r.Left, Height = r.Bottom - r.Top };
+        return (h, cachedInfo);
     }
     static bool Cloaked(IntPtr h) => DwmGetWindowAttribute(h, DwmwaCloaked, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
     static WindowInfo Describe(IntPtr h)

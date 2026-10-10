@@ -9,9 +9,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 VERSION = "32.2.2"
 SHA256 = "4d6e40e3ab155f56b30de517380566a206d74b63cdf5ad49aa596924768f97e1"
 URL = f"https://github.com/obsproject/obs-studio/releases/download/{VERSION}/OBS-Studio-{VERSION}-Windows-x64.zip"
-MODULES = {"win-capture", "win-wasapi", "obs-ffmpeg", "obs-outputs", "obs-nvenc"}
-# Frontend, scripting and UI-toolkit files are not used by libobs-only hosting.
-SKIP = ["qt6", "obs64.exe", "obspython", "obslua", "python", "imageformats/", "platforms/", "styles/", "sqldrivers/", "tls/"]
+# obs-ffmpeg contains the replay buffer; obs-outputs (RTMP/FTL streaming) is never loaded.
+MODULES = {"win-capture", "win-wasapi", "obs-ffmpeg", "obs-nvenc"}
+# Frontend, scripting and UI-toolkit files are not used by libobs-only hosting. Also not imported or
+# loaded by anything MonoClip uses: WebRTC (datachannel, msquic), Lua, OpenGL renderer, QSV test.
+# Keep libobs-winrt.dll: win-capture loads it at runtime for Windows Graphics Capture.
+SKIP = ["qt6", "obs64.exe", "obspython", "obslua", "python", "imageformats/", "platforms/", "styles/", "sqldrivers/", "tls/",
+        "datachannel", "msquic", "lua51", "obs-scripting", "obs-frontend-api", "libobs-opengl", "obs-qsv-test"]
 # Module texts fall back to en-US; MonoClip's UI is German. Other locales only add files.
 LOCALES = {"en-US.ini", "de-DE.ini"}
 REQUIRED = ["bin/64bit/obs.dll", "bin/64bit/obs-ffmpeg-mux.exe", "bin/64bit/libobs-d3d11.dll", "data/libobs/default.effect", "obs-plugins/64bit/win-capture.dll"]

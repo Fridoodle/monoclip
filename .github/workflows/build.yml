@@ -26,6 +26,8 @@ jobs:
         run: dotnet run --project tests/MonoClip.UiTests -p:HotkeyTestStartup=HotkeyFallbackTests
       - name: Build Windows app
         run: dotnet build src/MonoClip.Windows -c Release -warnaserror
+      - name: Build starter
+        run: dotnet build src/MonoClip.Launcher -c Release -warnaserror
   portable:
     runs-on: windows-latest
     needs: verify
@@ -39,8 +41,11 @@ jobs:
           python-version: '3.11'
       - name: Bundle official OBS runtime (pinned SHA256)
         run: python tools/prepare-runtime.py
-      - name: Publish self-contained app
-        run: dotnet publish src/MonoClip.Windows -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o dist/MonoClip
+      - name: Publish self-contained app and starter
+        run: |
+          dotnet publish src/MonoClip.Windows -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o dist/MonoClip/app
+          # NativeAOT starter (~1.3 MB); the runner has the MSVC linker it needs.
+          dotnet publish src/MonoClip.Launcher -c Release -p:PublishAot=true -o dist/MonoClip
       - name: All libobs imports resolve in the bundled DLL
         shell: pwsh
         run: |
@@ -57,15 +62,22 @@ jobs:
           $target = Join-Path $env:RUNNER_TEMP 'Mono Clip (portable) test'
           Expand-Archive $zip.FullName $target
           $root = Join-Path $target 'MonoClip'
-          foreach ($f in 'MonoClip.exe','obs.dll','obs-ffmpeg-mux.exe','runtime/data/libobs/default.effect','runtime/obs-plugins/64bit/win-capture.dll') {
+          foreach ($f in 'MonoClip.exe','app/MonoClip.exe','app/obs.dll','app/obs-ffmpeg-mux.exe','app/runtime/data/libobs/default.effect','app/runtime/obs-plugins/64bit/win-capture.dll') {
             if (!(Test-Path (Join-Path $root $f))) { throw "missing $f" }
           }
+          $loose = Get-ChildItem $root -File | Where-Object Name -ne 'MonoClip.exe'
+          if ($loose) { throw "folder root must only contain MonoClip.exe: $($loose.Name -join ', ')" }
           if (Get-ChildItem $root -Recurse -Include *.ps1,*.cmd) { throw 'setup scripts must not be shipped' }
-          # Fresh settings start tray-only; the process must stay alive (no missing DLL / runtime error dialog).
-          $p = Start-Process (Join-Path $root 'MonoClip.exe') -PassThru
+          # The starter hands over to app\MonoClip.exe and exits. Fresh settings start tray-only;
+          # the app must stay alive (no missing DLL / runtime error dialog).
+          $starter = Start-Process (Join-Path $root 'MonoClip.exe') -PassThru
+          $starter.WaitForExit(15000) | Out-Null
+          if ($starter.ExitCode -ne 0) { throw "starter failed with code $($starter.ExitCode)" }
           Start-Sleep -Seconds 8
-          if ($p.HasExited) { throw "MonoClip exited early with code $($p.ExitCode)" }
-          Stop-Process -Id $p.Id -Force
+          $appExe = (Resolve-Path (Join-Path $root 'app/MonoClip.exe')).Path
+          $p = Get-Process MonoClip -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExe }
+          if (!$p) { throw 'MonoClip app is not running after the starter handed over' }
+          $p | Stop-Process -Force
           $errors = Join-Path $env:LOCALAPPDATA 'MonoClip/errors.log'
           if (Test-Path $errors) { Get-Content $errors; throw 'MonoClip logged a startup error' }
       - uses: actions/upload-artifact@v4

@@ -9,19 +9,22 @@ public sealed class ObsHost : IDisposable
     public IReadOnlyList<string> Sources { get; private set; } = [];
     static readonly Obs.Log LogDelegate = WriteLog;
     static readonly object LogLock = new();
+    // One open writer instead of opening and closing the file for every OBS log line.
+    static StreamWriter? logWriter; [ThreadStatic] static byte[]? logBuffer;
     public static string LogPath { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MonoClip", "capture.log");
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool SetDllDirectory(string path);
     [DllImport("msvcrt.dll", EntryPoint = "_vsnprintf", CallingConvention = CallingConvention.Cdecl)] static extern int vsnprintf(byte[] buffer, nuint size, IntPtr format, IntPtr args);
     static void WriteLog(int level, IntPtr format, IntPtr args, IntPtr param)
     {
         if (level > 300) return;
-        try { var bytes = new byte[8192]; var n = vsnprintf(bytes, (nuint)bytes.Length, format, args); if (n < 0) n = bytes.Length - 1; string text = Encoding.UTF8.GetString(bytes, 0, Math.Min(n, bytes.Length - 1)); lock (LogLock) { File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss} [{level}] {text}\n"); } } catch { /* Never cross a native callback boundary. */ }
+        try { var bytes = logBuffer ??= new byte[8192]; var n = vsnprintf(bytes, (nuint)bytes.Length, format, args); if (n < 0) n = bytes.Length - 1; string text = Encoding.UTF8.GetString(bytes, 0, Math.Min(n, bytes.Length - 1)); lock (LogLock) { logWriter ??= new StreamWriter(new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete), new UTF8Encoding(false)) { AutoFlush = true }; logWriter.Write($"{DateTime.Now:HH:mm:ss} [{level}] {text}\n"); } } catch { /* Never cross a native callback boundary. */ }
     }
     public void Initialize(int width, int height, int fps)
     {
         if (initialized) throw new InvalidOperationException("OBS already initialized");
         var root = AppContext.BaseDirectory;
         Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+        lock (LogLock) { logWriter?.Dispose(); logWriter = null; }
         if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 2_000_000) File.Move(LogPath, LogPath + ".old", true);
         foreach (var required in new[] { "obs.dll", "obs-ffmpeg-mux.exe", "libobs-d3d11.dll", "runtime/data/libobs/default.effect" })
             if (!File.Exists(Path.Combine(root, required))) throw new FileNotFoundException("Aufnahme-Runtime unvollständig (" + required + " fehlt). Das komplette MonoClip-ZIP erneut in einen neuen Ordner entpacken.", required);
@@ -44,7 +47,8 @@ public sealed class ObsHost : IDisposable
             var audio = new Obs.AudioInfo { Rate = 48000, Speakers = 2 }; if (!Obs.obs_reset_audio(ref audio)) throw new InvalidOperationException("Audio init failed");
             // The stock win-capture Vulkan helper resolves ../../data relative to the working directory.
             previousDirectory = Environment.CurrentDirectory; Directory.SetCurrentDirectory(Path.Combine(root, "runtime/obs-plugins/64bit"));
-            foreach (var id in new[] { "win-capture", "win-wasapi", "obs-ffmpeg", "obs-outputs", "obs-nvenc" })
+            // obs-ffmpeg provides the replay buffer; the streaming outputs (obs-outputs) are not needed.
+            foreach (var id in new[] { "win-capture", "win-wasapi", "obs-ffmpeg", "obs-nvenc" })
             {
                 var dll = Path.Combine(root, "runtime/obs-plugins/64bit", id + ".dll");
                 if (!File.Exists(dll)) continue;
@@ -57,5 +61,5 @@ public sealed class ObsHost : IDisposable
         }
         catch { Dispose(); throw; }
     }
-    public void Dispose() { if (initialized) { Obs.obs_shutdown(); initialized = false; if (previousDirectory != null && Directory.Exists(previousDirectory)) Directory.SetCurrentDirectory(previousDirectory); } }
+    public void Dispose() { if (initialized) { Obs.obs_shutdown(); initialized = false; if (previousDirectory != null && Directory.Exists(previousDirectory)) Directory.SetCurrentDirectory(previousDirectory); lock (LogLock) { logWriter?.Dispose(); logWriter = null; } } }
 }
