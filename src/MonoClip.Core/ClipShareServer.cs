@@ -10,18 +10,21 @@ public sealed class ClipShareServer : IDisposable
 {
     const int MaxHeaderBytes = 8192;
     static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
-    readonly string file; readonly byte[] path; volatile bool ready = true;
+    // The clip currently served. Swapped atomically so one server (and tunnel) can serve clip after clip.
+    sealed record Route(string File, byte[] Path, string RequestPath, int CacheSeconds, bool Ready);
+    volatile Route? route;
     readonly TcpListener listener = new(IPAddress.Loopback, 0); readonly CancellationTokenSource stop = new();
-    readonly SemaphoreSlim slots; readonly HashSet<TcpClient> clients = []; readonly int cacheSeconds; long bytesSent; bool disposed;
-    public string RequestPath { get; }
+    readonly SemaphoreSlim slots; readonly HashSet<TcpClient> clients = []; long bytesSent; bool disposed;
+    public string RequestPath => route?.RequestPath ?? "";
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     public long BytesSent => Interlocked.Read(ref bytesSent);
     // False while the file is still being written: requests get 503 so the tunnel can start in parallel.
-    public bool Ready { get => ready; set => ready = value; }
-    public ClipShareServer(string file, string requestPath, int maxConnections = SharePolicy.MaxConnections, int cacheSeconds = SharePolicy.DefaultMinutes * 60)
-    {
-        this.cacheSeconds = cacheSeconds; this.file = file; RequestPath = requestPath; path = Encoding.UTF8.GetBytes(requestPath); slots = new(maxConnections, maxConnections);
-    }
+    public bool Ready { get => route?.Ready == true; set { if (route is { } r) route = r with { Ready = value }; } }
+    public ClipShareServer(int maxConnections = SharePolicy.MaxConnections) => slots = new(maxConnections, maxConnections);
+    public ClipShareServer(string file, string requestPath, int maxConnections = SharePolicy.MaxConnections, int cacheSeconds = SharePolicy.DefaultMinutes * 60) : this(maxConnections) => Publish(file, requestPath, cacheSeconds);
+    // Serves this file at this path from now on; every other path, including the previous clip's, is 404.
+    public void Publish(string file, string requestPath, int cacheSeconds, bool ready = true) => route = new(file, Encoding.UTF8.GetBytes(requestPath), requestPath, cacheSeconds, ready);
+    public void Unpublish() => route = null;
     public void Start() { listener.Start(); _ = AcceptAsync(); }
     async Task AcceptAsync()
     {
@@ -74,19 +77,20 @@ public sealed class ClipShareServer : IDisposable
         if (headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length", out var body) && body != "0")) { await WriteHead(stream, "400 Bad Request", [], 0, false); return false; }
         if (request[0] is not ("GET" or "HEAD")) { await WriteHead(stream, "405 Method Not Allowed", [("Allow", "GET, HEAD")], 0, false); return false; }
         var target = Encoding.UTF8.GetBytes(request[1].Split('?')[0]);
-        if (!CryptographicOperations.FixedTimeEquals(target, path)) { await WriteHead(stream, "404 Not Found", [], 0, keepAlive); return keepAlive; }
-        if (!ready || !File.Exists(file)) { await WriteHead(stream, "503 Service Unavailable", [("Retry-After", "1")], 0, keepAlive); return keepAlive; }
-        long length = new FileInfo(file).Length;
+        var current = route;
+        if (current == null || !CryptographicOperations.FixedTimeEquals(target, current.Path)) { await WriteHead(stream, "404 Not Found", [], 0, keepAlive); return keepAlive; }
+        if (!current.Ready || !File.Exists(current.File)) { await WriteHead(stream, "503 Service Unavailable", [("Retry-After", "1")], 0, keepAlive); return keepAlive; }
+        long length = new FileInfo(current.File).Length;
         var range = ParseRange(headers.GetValueOrDefault("Range"), length, out bool unsatisfiable);
         if (unsatisfiable) { await WriteHead(stream, "416 Range Not Satisfiable", [("Content-Range", $"bytes */{length}")], 0, keepAlive); return keepAlive; }
         var (start, last) = range ?? (0, length - 1); long count = length == 0 ? 0 : last - start + 1;
-        List<(string, string)> extra = [("Content-Type", "video/mp4"), ("Accept-Ranges", "bytes"), ("Cache-Control", $"public, max-age={cacheSeconds}"), ("X-Content-Type-Options", "nosniff"), ("Content-Disposition", "inline")];
+        List<(string, string)> extra = [("Content-Type", "video/mp4"), ("Accept-Ranges", "bytes"), ("Cache-Control", $"public, max-age={current.CacheSeconds}"), ("X-Content-Type-Options", "nosniff"), ("Content-Disposition", "inline")];
         if (range != null) extra.Add(("Content-Range", $"bytes {start}-{last}/{length}"));
         await WriteHead(stream, range != null ? "206 Partial Content" : "200 OK", extra, count, keepAlive);
-        if (request[0] == "GET" && count > 0) await SendFile(stream, start, count);
+        if (request[0] == "GET" && count > 0) await SendFile(stream, current.File, start, count);
         return keepAlive;
     }
-    async Task SendFile(NetworkStream stream, long start, long count)
+    async Task SendFile(NetworkStream stream, string file, long start, long count)
     {
         // FileShare.Delete: stopping the share may remove the file while a viewer still reads.
         using var source = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 1 << 16, FileOptions.Asynchronous | FileOptions.SequentialScan) { Position = start };

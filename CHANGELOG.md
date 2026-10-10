@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+- First stable release.
+- Sharing reuses a working tunnel for 30 minutes: the next clip is shared in about 0.5 s instead of 9 s.
+- Fixed frequent HTTP 530 errors when sharing: MonoClip checked new links too early, which made Cloudflare report them as missing for several seconds.
+- Up to three attempts when Cloudflare returns a broken link.
+
+Known issue: sharing depends on Cloudflare's free quick tunnels and can still fail occasionally, especially after many links in a short time.
+
 ## 0.1.9 Beta
 
 - App, documentation and repository are now English only.

@@ -297,6 +297,16 @@ Test("share server can start before the clip is ready and answers 503 until then
         server.Ready=true;var ok=http.GetAsync("/t/later.mp4").Result;Equal(200,(int)ok.StatusCode);Equal(3L,ok.Content.Headers.ContentLength);
     }finally{Directory.Delete(dir,true);}
 });
+Test("one share server serves clip after clip and drops the previous path",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-swap-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var a=Path.Combine(dir,"a.mp4");var b=Path.Combine(dir,"b.mp4");File.WriteAllBytes(a,new byte[]{1});File.WriteAllBytes(b,new byte[]{2,2});
+        using var server=new ClipShareServer();server.Start();using var http=new HttpClient{BaseAddress=new($"http://127.0.0.1:{server.Port}")};
+        Equal(404,(int)http.GetAsync("/x/a.mp4").Result.StatusCode);
+        server.Publish(a,"/x/a.mp4",60);Equal(1L,http.GetAsync("/x/a.mp4").Result.Content.Headers.ContentLength);
+        server.Publish(b,"/y/b.mp4",120);Equal(404,(int)http.GetAsync("/x/a.mp4").Result.StatusCode);var second=http.GetAsync("/y/b.mp4").Result;Equal(2L,second.Content.Headers.ContentLength);Equal("public, max-age=120",second.Headers.CacheControl!.ToString());
+        server.Unpublish();Equal(404,(int)http.GetAsync("/y/b.mp4").Result.StatusCode);Equal("",server.RequestPath);
+    }finally{Directory.Delete(dir,true);}
+});
 // NEXT_TEST
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;
