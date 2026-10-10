@@ -16,6 +16,16 @@ public static class WindowsIntegration
         if (!Equals(key.GetValue("MonoClip"), command))
             throw new IOException("Could not verify the Windows startup entry.");
     }
+    // Makes the startup entry match the setting and point at this copy of MonoClip. With several
+    // versions extracted side by side, the one started last wins. Returns whether anything changed.
+    public static bool SyncAutostart(bool enabled, string executablePath, string registryPath = RunKey)
+    {
+        string? current;
+        using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryPath)) current = key?.GetValue("MonoClip") as string;
+        var wanted = enabled ? BuildAutostartCommand(executablePath) : null;
+        if (current == wanted) return false;
+        SetAutostart(enabled, executablePath, registryPath); return true;
+    }
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint sfgaoIn, out uint sfgaoOut);
     [DllImport("shell32.dll")] static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr[]? items, uint flags);
     [DllImport("ole32.dll")] static extern void CoTaskMemFree(IntPtr pidl);

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- "Start with Windows" always points to the version that was started last; no need to toggle it after an update.
+- Scrolling the settings window no longer changes drop-downs or number fields under the cursor.
+- Drag a clip onto the settings window to share it.
+
 ## 1.0.0
 
 - First stable release.

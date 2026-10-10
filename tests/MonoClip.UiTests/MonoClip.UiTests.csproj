@@ -21,6 +21,7 @@
     <Compile Include="../../src/MonoClip.Windows/UI/MonoMenuColors.cs" Link="MonoMenuColors.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/MonoButton.cs" Link="MonoButton.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/MonoSlider.cs" Link="MonoSlider.cs" />
+    <Compile Include="../../src/MonoClip.Windows/UI/WheelToPage.cs" Link="WheelToPage.cs" />
     <Compile Include="../../src/MonoClip.Windows/UI/SoundEffects.cs" Link="SoundEffects.cs" />
     <ProjectReference Include="../../src/MonoClip.Core/MonoClip.Core.csproj" />
   </ItemGroup>

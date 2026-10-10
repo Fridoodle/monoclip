@@ -1,5 +1,10 @@
 using System.Reflection;
 
+static class Wheel
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+    public static void Send(IntPtr window, int delta, Point screen) => SendMessage(window, 0x020A, (IntPtr)(delta << 16), (IntPtr)((screen.Y << 16) | (screen.X & 0xFFFF)));
+}
 internal static class Program
 {
     private static int failures;
@@ -223,6 +228,40 @@ internal static class Program
             Equal(20,form.ReadSettings().ShareMinutes);((NumericUpDown)F("shareMinutes")).Value=30;Equal(30,form.ReadSettings().ShareMinutes);
             Equal(false,form.ReadSettings().AutoShare);((CheckBox)F("autoShare")).Checked=true;Equal(true,form.ReadSettings().AutoShare);
             form.Close();
+        });
+        Test("Startup entry follows the running copy and is only rewritten when it differs",()=>{
+            var path=@"Software\MonoClip.UiTests\"+Guid.NewGuid();
+            try{
+                if(!MonoClip.Windows.WindowsIntegration.SyncAutostart(true,@"C:\Old\app\MonoClip.exe",path))throw new Exception("first enable not written");
+                if(MonoClip.Windows.WindowsIntegration.SyncAutostart(true,@"C:\Old\app\MonoClip.exe",path))throw new Exception("unchanged entry rewritten");
+                if(!MonoClip.Windows.WindowsIntegration.SyncAutostart(true,@"C:\New Version\app\MonoClip.exe",path))throw new Exception("new location not picked up");
+                using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(path))Equal("\"C:\\New Version\\app\\MonoClip.exe\" --minimized",key!.GetValue("MonoClip"));
+                if(!MonoClip.Windows.WindowsIntegration.SyncAutostart(false,@"C:\New Version\app\MonoClip.exe",path))throw new Exception("disable not applied");
+                using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(path))Equal<object?>(null,key!.GetValue("MonoClip"));
+                if(MonoClip.Windows.WindowsIntegration.SyncAutostart(false,@"C:\New Version\app\MonoClip.exe",path))throw new Exception("absent entry touched");
+            }finally{Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(path,false);}
+        });
+        Test("Mouse wheel scrolls the page instead of changing lists and numbers",()=>{
+            using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{AdvancedMode=true},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
+            T F<T>(string name)=>(T)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            var resolution=F<ComboBox>("resolution");var fps=F<ComboBox>("fps");var duration=F<NumericUpDown>("duration");var minutes=F<NumericUpDown>("shareMinutes");
+            int res=resolution.SelectedIndex,rate=fps.SelectedIndex;decimal length=duration.Value,life=minutes.Value;
+            foreach(var delta in new[]{120,-120})foreach(var target in new Control[]{resolution,fps,duration,minutes}.Concat(duration.Controls.Cast<Control>()).Concat(minutes.Controls.Cast<Control>())){
+                var center=target.PointToScreen(new Point(target.Width/2,target.Height/2));
+                Wheel.Send(target.Handle,delta,center);Application.DoEvents();
+            }
+            Equal(res,resolution.SelectedIndex);Equal(rate,fps.SelectedIndex);Equal(length,duration.Value);Equal(life,minutes.Value);
+            form.Close();
+        });
+        Test("Dropping a single clip on the window shares it",()=>{
+            using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});
+            var shared=new List<string>();form.DropFiles(["C:\\clip.mkv"]);Equal(0,shared.Count);
+            form.AttachSharing(new FakeSharer(),()=>{},()=>{},shared.Add);
+            form.DropFiles(["C:\\a.mkv","C:\\b.mkv"]);Equal(0,shared.Count);
+            form.DropFiles(["C:\\clip.mkv"]);Equal("C:\\clip.mkv",shared.Single());
+            if(!form.AllowDrop)throw new Exception("window does not accept drops");
+            var table=(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField("table",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            if(!table.Controls.Cast<Control>().All(c=>c.AllowDrop))throw new Exception("some controls block drops");
         });
         Test("Advanced mode toggle persists immediately",()=>{
             MonoClip.Core.AppSettings? saved=null;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),s=>saved=s,()=>{},()=>{});

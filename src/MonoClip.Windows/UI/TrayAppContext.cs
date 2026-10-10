@@ -92,7 +92,7 @@ public sealed class TrayAppContext : ApplicationContext
         try
         {
             hotkeys.Set(parsed); engine.Apply(next); applied = true;
-            if (next.StartWithWindows != old.StartWithWindows) { WindowsIntegration.SetAutostart(next.StartWithWindows, Environment.ProcessPath!); autostartChanged = true; }
+            if (next.StartWithWindows || old.StartWithWindows) autostartChanged = WindowsIntegration.SyncAutostart(next.StartWithWindows, Environment.ProcessPath!);
             SettingsStore.Save(settingsPath, next); settings = next with { }; UpdateTray();
         }
         catch (Exception original) { var rollbackErrors = new List<string>(); try { hotkeys.Set(Hotkey.Parse(old.Hotkey)); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (applied) try { engine.Apply(old); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (autostartChanged) try { WindowsIntegration.SetAutostart(old.StartWithWindows, Environment.ProcessPath!); } catch (Exception e) { rollbackErrors.Add(e.Message); } throw new InvalidOperationException(original.Message + (rollbackErrors.Count == 0 ? "" : " Rollback failed: " + string.Join("; ", rollbackErrors)), original); }
