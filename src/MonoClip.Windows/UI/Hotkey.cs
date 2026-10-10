@@ -6,7 +6,7 @@ public readonly record struct Hotkey(uint Modifiers, Keys Key)
 
     public static Hotkey Parse(string text)
     {
-        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Bitte eine Tastenkombination festlegen.");
+        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Set a key combination.");
         uint modifiers = NoRepeat;
         var tokens = text.Split('+', StringSplitOptions.TrimEntries);
         foreach (var token in tokens[..^1])
@@ -17,7 +17,7 @@ public readonly record struct Hotkey(uint Modifiers, Keys Key)
                 "SHIFT" => 4u,
                 "ALT" => 1u,
                 "WIN" or "WINDOWS" => 8u,
-                _ => throw new ArgumentException("Ungültige Tastenkombination.")
+                _ => throw new ArgumentException("Invalid key combination.")
             };
             if ((modifiers & modifier) != 0) throw new ArgumentException("Modifikator doppelt angegeben.");
             modifiers |= modifier;
@@ -28,7 +28,7 @@ public readonly record struct Hotkey(uint Modifiers, Keys Key)
             !Enum.IsDefined(key) || (int)key <= 0 || (int)key > 254 ||
             key is Keys.ShiftKey or Keys.ControlKey or Keys.Menu or Keys.LWin or Keys.RWin or
                 Keys.LShiftKey or Keys.RShiftKey or Keys.LControlKey or Keys.RControlKey or Keys.LMenu or Keys.RMenu)
-            throw new ArgumentException("Bitte eine Taste zusammen mit optionalen Modifikatoren drücken.");
+            throw new ArgumentException("Press a key, optionally with modifiers.");
         return new Hotkey(modifiers, key);
     }
 

@@ -14,15 +14,15 @@ public static partial class SharePolicy
     // Throws ArgumentException with a user-facing reason when a file must not be shared.
     public static void CheckShareable(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) throw new ArgumentException("Datei nicht gefunden.");
-        if (!ShareableExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("Nur MKV- oder MP4-Videos können geteilt werden.");
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) throw new ArgumentException("File not found.");
+        if (!ShareableExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("Only MKV or MP4 videos can be shared.");
         long size = new FileInfo(path).Length;
-        if (size == 0) throw new ArgumentException("Die Datei ist leer.");
-        if (size > MaxShareMegabytes * 1024L * 1024) throw new ArgumentException($"Zu groß zum Teilen: {size / (1024 * 1024)} MB (maximal {MaxShareMegabytes} MB).");
+        if (size == 0) throw new ArgumentException("The file is empty.");
+        if (size > MaxShareMegabytes * 1024L * 1024) throw new ArgumentException($"Too large to share: {size / (1024 * 1024)} MB (max {MaxShareMegabytes} MB).");
         // The extension can lie; the container signature cannot: Matroska starts with EBML, MP4 with an ftyp box.
-        var head = new byte[12]; using (var s = File.OpenRead(path)) { if (s.ReadAtLeast(head, head.Length, false) < head.Length) throw new ArgumentException("Keine gültige Videodatei."); }
+        var head = new byte[12]; using (var s = File.OpenRead(path)) { if (s.ReadAtLeast(head, head.Length, false) < head.Length) throw new ArgumentException("Not a valid video file."); }
         bool matroska = head.AsSpan(0, 4).SequenceEqual(new byte[] { 0x1A, 0x45, 0xDF, 0xA3 }), mp4 = head.AsSpan(4, 4).SequenceEqual("ftyp"u8);
-        if (!matroska && !mp4) throw new ArgumentException("Keine gültige MKV- oder MP4-Videodatei.");
+        if (!matroska && !mp4) throw new ArgumentException("Not a valid MKV or MP4 video.");
     }
     public static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
     // Unguessable path: the random tunnel host alone is not a secret once posted somewhere.

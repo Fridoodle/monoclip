@@ -1,23 +1,23 @@
-name: Fehler melden
-description: Aufnahme-, Audio-, Export- oder Startproblem melden.
+name: Bug report
+description: Report a capture, audio, export, sharing or startup problem.
 body:
   - type: textarea
     id: summary
     attributes:
-      label: Was passiert?
-      description: Genaue Fehlermeldung und erwartetes Verhalten. Keine privaten Clips oder Tokens.
+      label: What happened?
+      description: Error message and expected behavior. Do not attach private clips or tokens.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: Schritte zur Reproduktion
+      label: Steps to reproduce
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
-      label: Umgebung
-      description: Windows-Version, GPU, Grafiktreiber, Spiel/Fenstermodus, MonoClip-Version und Aufnahme-Einstellungen.
+      label: Environment
+      description: Windows version, GPU and driver, game and window mode, MonoClip version, capture settings.
     validations:
       required: true

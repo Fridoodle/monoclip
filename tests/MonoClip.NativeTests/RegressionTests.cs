@@ -143,11 +143,11 @@ internal static class RegressionTests
             var seen = new List<(string Target, ClipContext Context)>();
             engine.StatusChanged += (_, _) => seen.Add((engine.CaptureTarget, Field<ClipContext>(engine, "context")));
             var first = new ClipContext("First", "first.exe", "First window", "game");
-            update!.Invoke(engine, new object[] { first, "Spiel · First" });
-            Check(seen.Count == 1 && seen[0] == ("Spiel · First", first), "target notification missing or emitted before target/context update");
+            update!.Invoke(engine, new object[] { first, "Game · First" });
+            Check(seen.Count == 1 && seen[0] == ("Game · First", first), "target notification missing or emitted before target/context update");
             var second = new ClipContext("Second", "second.exe", "Second window", "game");
-            update.Invoke(engine, new object[] { second, "Spiel · Second" });
-            Check(seen.Count == 2 && seen[1] == ("Spiel · Second", second), "game change without hook transition did not notify current target");
+            update.Invoke(engine, new object[] { second, "Game · Second" });
+            Check(seen.Count == 2 && seen[1] == ("Game · Second", second), "game change without hook transition did not notify current target");
             var desktop = new ClipContext("Desktop", "", "desktop window", "desktop-dxgi");
             update.Invoke(engine, new object[] { desktop, "Desktop · Monitor 1" });
             update.Invoke(engine, new object[] { desktop, "Desktop · Monitor 2" });

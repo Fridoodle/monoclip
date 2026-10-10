@@ -93,7 +93,7 @@ public sealed class ClipShareServer : IDisposable
         var buffer = new byte[1 << 16];
         while (count > 0)
         {
-            int n = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, count)), stop.Token); if (n == 0) throw new IOException("Clip ist kürzer als erwartet.");
+            int n = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, count)), stop.Token); if (n == 0) throw new IOException("Clip is shorter than expected.");
             await stream.WriteAsync(buffer.AsMemory(0, n), stop.Token); count -= n; Interlocked.Add(ref bytesSent, n);
         }
     }

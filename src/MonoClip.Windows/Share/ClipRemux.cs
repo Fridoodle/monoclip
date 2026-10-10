@@ -10,8 +10,8 @@ internal static class ClipRemux
         var raw = target + ".remux.mp4";
         try
         {
-            if (!Obs.media_remux_job_create(out var job, clip, raw)) throw new InvalidOperationException("Clip konnte nicht nach MP4 umgepackt werden.");
-            try { if (!Obs.media_remux_job_process(job, IntPtr.Zero, IntPtr.Zero)) throw new InvalidOperationException("MP4-Umpacken fehlgeschlagen."); }
+            if (!Obs.media_remux_job_create(out var job, clip, raw)) throw new InvalidOperationException("Could not remux the clip to MP4.");
+            try { if (!Obs.media_remux_job_process(job, IntPtr.Zero, IntPtr.Zero)) throw new InvalidOperationException("MP4 remux failed."); }
             finally { Obs.media_remux_job_destroy(job); }
             try { Mp4FastStart.Apply(raw, target); }
             catch (NotSupportedException) { File.Move(raw, target, true); } // Still playable, just starts a little later.

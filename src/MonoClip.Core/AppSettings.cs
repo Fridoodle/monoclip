@@ -30,11 +30,11 @@ public sealed record AppSettings
         if ((Width, Height) is not ((1280, 720) or (1920, 1080) or (2560, 1440) or (3840, 2160)))
             throw new ArgumentException("Unsupported capture resolution; select a supported width/height pair.");
         if (Fps is not (30 or 60 or 120)) throw new ArgumentException("Frame rate must be 30, 60 or 120.");
-        if (!Enum.IsDefined(Quality)) throw new ArgumentException("Unbekannte Qualitätsstufe.");
-        if (string.IsNullOrWhiteSpace(Hotkey)) throw new ArgumentException("Bitte einen Hotkey angeben.");
-        if (string.IsNullOrWhiteSpace(ClipsDirectory) || !Path.IsPathFullyQualified(ClipsDirectory) || ClipsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0) throw new ArgumentException("Bitte einen absoluten gültigen Clip-Ordner angeben.");
-        if (string.IsNullOrWhiteSpace(MicrophoneDevice) || string.IsNullOrWhiteSpace(DesktopDevice)) throw new ArgumentException("Audiogeräte dürfen nicht leer sein.");
+        if (!Enum.IsDefined(Quality)) throw new ArgumentException("Unknown quality preset.");
+        if (string.IsNullOrWhiteSpace(Hotkey)) throw new ArgumentException("Hotkey is required.");
+        if (string.IsNullOrWhiteSpace(ClipsDirectory) || !Path.IsPathFullyQualified(ClipsDirectory) || ClipsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0) throw new ArgumentException("Clip folder must be a valid absolute path.");
+        if (string.IsNullOrWhiteSpace(MicrophoneDevice) || string.IsNullOrWhiteSpace(DesktopDevice)) throw new ArgumentException("Audio devices must not be empty.");
         if (ClipSeconds is < 5 or > 300) throw new ArgumentException("Clip duration must be between 5 and 300 seconds.");
-        if (ShareMinutes is < SharePolicy.MinMinutes or > SharePolicy.MaxMinutes) throw new ArgumentException($"Teilen-Dauer muss zwischen {SharePolicy.MinMinutes} und {SharePolicy.MaxMinutes} Minuten liegen.");
+        if (ShareMinutes is < SharePolicy.MinMinutes or > SharePolicy.MaxMinutes) throw new ArgumentException($"Link lifetime must be {SharePolicy.MinMinutes}-{SharePolicy.MaxMinutes} minutes.");
     }
 }

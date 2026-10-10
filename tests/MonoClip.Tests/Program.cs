@@ -130,7 +130,7 @@ Test("clips are indexed by safe game folder without sidecar metadata", () => {
 Test("safe game folder rejects Windows reserved names and traversal", () => {
     Equal("_CON",ClipLibrary.SafeName("CON"));Equal("_LPT1.txt",ClipLibrary.SafeName("LPT1.txt"));
     True(!ClipLibrary.SafeName("../../game").Contains('/'),"traversal preserved");
-    Equal("Desktop",ClipLibrary.SafeName("..."));Equal("Spiel Ä",ClipLibrary.SafeName("Spiel Ä"));
+    Equal("Desktop",ClipLibrary.SafeName("..."));Equal("Café Ä",ClipLibrary.SafeName("Café Ä"));
 });
 Test("settings reject empty hotkey and nonabsolute clip destination",()=>{
     Throws<ArgumentException>(()=>new AppSettings{Hotkey=""}.Validate());
@@ -267,7 +267,7 @@ Test("share server announces cache lifetime matching the share duration",()=>{
         Equal("public, max-age=300",http.GetAsync($"http://127.0.0.1:{server.Port}/t/c.mp4").Result.Headers.CacheControl!.ToString());}finally{Directory.Delete(dir,true);}
 });
 Test("starter passes every argument through Windows command-line parsing unchanged",()=>{
-    string[] args=["--settings","--minimized","","with space","quote\"inside","trailing\\","C:\\Pfad mit Leerzeichen\\","a\\\\\"b","tab\there","Ümlaut ß"];
+    string[] args=["--settings","--minimized","","with space","quote\"inside","trailing\\","C:\\Path with spaces\\","a\\\\\"b","tab\there","naïve Ü ß"];
     var line=CommandLine.Build(@"C:\Mono Clip\app\MonoClip.exe",args);
     var parsed=WindowsArgv.Parse(line);
     Equal(@"C:\Mono Clip\app\MonoClip.exe",parsed[0]);Equal(args.Length+1,parsed.Length);
@@ -285,7 +285,7 @@ Test("only real MKV/MP4 videos up to the size limit can be shared manually",()=>
         Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("empty.mkv",[])));
         Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("tiny.mkv",[0x1A,0x45])));
         var big=Path.Combine(dir,"big.mkv");using(var s=File.Create(big)){s.Write(mkv);s.SetLength((SharePolicy.MaxShareMegabytes+1)*1024L*1024);}
-        try{SharePolicy.CheckShareable(big);throw new Exception("oversized file accepted");}catch(ArgumentException e){True(e.Message.Contains("maximal "+SharePolicy.MaxShareMegabytes+" MB"),"size reason missing: "+e.Message);}
+        try{SharePolicy.CheckShareable(big);throw new Exception("oversized file accepted");}catch(ArgumentException e){True(e.Message.Contains("max "+SharePolicy.MaxShareMegabytes+" MB"),"size reason missing: "+e.Message);}
         Equal(500,SharePolicy.MaxShareMegabytes);
     }finally{Directory.Delete(dir,true);}
 });

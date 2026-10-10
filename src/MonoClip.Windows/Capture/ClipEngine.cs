@@ -16,15 +16,15 @@ public sealed class ClipEngine : IClipEngine
     record Pending(long Generation, string Request, ClipContext Context, AppSettings Settings, string Encoder, DateTime At);
     Pending? pending; ClipContext context = new("Desktop", "", "", "desktop"); DateTime started;
     public bool IsRunning => output != IntPtr.Zero && Obs.obs_output_active(output);
-    public string Status { get; private set; } = "Puffer gestoppt";
+    public string Status { get; private set; } = "Buffer stopped";
     public string EncoderName { get; private set; } = "Hardware-H.264";
-    public string CaptureTarget { get; private set; } = "Automatisch: Fenster unter der Maus";
+    public string CaptureTarget { get; private set; } = "Automatic: window under cursor";
     public int TotalFrames => output == IntPtr.Zero ? 0 : Obs.obs_output_get_total_frames(output);
     public int DroppedFrames => output == IntPtr.Zero ? 0 : Obs.obs_output_get_frames_dropped(output);
     public event EventHandler? StatusChanged; public event EventHandler<ClipSavedEventArgs>? ClipSaved;
     public ClipEngine() { _ = dispatcher.Handle; timer.Tick += (_, _) => Tick(); }
     void SetStatus(string text) { Status = text; StatusChanged?.Invoke(this, EventArgs.Empty); }
-    static IntPtr Require(IntPtr ptr, string name) => ptr == IntPtr.Zero ? throw new InvalidOperationException(name + " konnte nicht erstellt werden.") : ptr;
+    static IntPtr Require(IntPtr ptr, string name) => ptr == IntPtr.Zero ? throw new InvalidOperationException(name + " could not be created.") : ptr;
     public IReadOnlyList<AudioDevice> GetAudioDevices(bool input) => [new("default", input ? "Windows-Standardmikrofon" : "Windows-Standardausgabe")];
     public void Start(AppSettings s)
     {
@@ -33,18 +33,18 @@ public sealed class ClipEngine : IClipEngine
         {
             Directory.CreateDirectory(settings.ClipsDirectory);
             var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(settings.ClipsDirectory))!);
-            if (drive.IsReady && drive.AvailableFreeSpace < 512L * 1024 * 1024) throw new IOException("Weniger als 512 MB Speicherplatz frei. Puffer wurde nicht gestartet.");
+            if (drive.IsReady && drive.AvailableFreeSpace < 512L * 1024 * 1024) throw new IOException("Less than 512 MB of free disk space. Buffer not started.");
             host = new(); host.Initialize(s.Width, s.Height, s.Fps);
-            scene = Require(Obs.obs_scene_create("MonoClip capture"), "Szene");
-            using (var data = new ObsData().Set("monitor_id", "DUMMY").Set("method", 1L).Set("capture_cursor", true).Set("force_sdr", true)) desktop = Require(Obs.obs_source_create("monitor_capture", "Desktop", data.Handle, IntPtr.Zero), "Desktopaufnahme");
+            scene = Require(Obs.obs_scene_create("MonoClip capture"), "Scene");
+            using (var data = new ObsData().Set("monitor_id", "DUMMY").Set("method", 1L).Set("capture_cursor", true).Set("force_sdr", true)) desktop = Require(Obs.obs_source_create("monitor_capture", "Desktop", data.Handle, IntPtr.Zero), "Desktop capture");
             desktopItem = Obs.obs_scene_add(scene, desktop); Fit(desktopItem); SelectMonitor(true);
             for (int i = 0; i < windows.Length; i++)
             {
                 // WGC window capture, matched by executable first (titles change while apps run).
-                using (var data = new ObsData().Set("window", "").Set("method", 2L).Set("priority", 2L).Set("cursor", true).Set("client_area", true).Set("force_sdr", true).Set("capture_audio", false)) windows[i] = Require(Obs.obs_source_create("window_capture", "Window under cursor " + (i + 1), data.Handle, IntPtr.Zero), "Fensteraufnahme");
+                using (var data = new ObsData().Set("window", "").Set("method", 2L).Set("priority", 2L).Set("cursor", true).Set("client_area", true).Set("force_sdr", true).Set("capture_audio", false)) windows[i] = Require(Obs.obs_source_create("window_capture", "Window under cursor " + (i + 1), data.Handle, IntPtr.Zero), "Window capture");
                 windowItems[i] = Obs.obs_scene_add(scene, windows[i]); Fit(windowItems[i]); Obs.obs_sceneitem_set_visible(windowItems[i], false);
             }
-            using (var data = new ObsData().Set("capture_mode", "any_fullscreen").Set("capture_cursor", true).Set("limit_framerate", true).Set("anti_cheat_hook", true).Set("capture_overlays", false).Set("capture_audio", false)) game = Require(Obs.obs_source_create("game_capture", "Automatic game", data.Handle, IntPtr.Zero), "Spielaufnahme");
+            using (var data = new ObsData().Set("capture_mode", "any_fullscreen").Set("capture_cursor", true).Set("limit_framerate", true).Set("anti_cheat_hook", true).Set("capture_overlays", false).Set("capture_audio", false)) game = Require(Obs.obs_source_create("game_capture", "Automatic game", data.Handle, IntPtr.Zero), "Game capture");
             gameItem = Obs.obs_scene_add(scene, game); Fit(gameItem); Obs.obs_sceneitem_set_visible(gameItem, false); shownItem = desktopItem;
             // Hidden scene items stop ticking. Keep the game hook and window capture alive
             // so switching between them is instant instead of re-hooking each time.
@@ -56,12 +56,12 @@ public sealed class ClipEngine : IClipEngine
             using (var data = new ObsData().Set("rate_control", "CBR").Set("bitrate", CapturePolicy.BitrateKbps(s)).Set("keyint_sec", 1L).Set("preset", "speed").Set("profile", "high").Set("bf", 0L))
             {
                 string? id = host.Encoders.Contains("h264_texture_amf") ? "h264_texture_amf" : host.Encoders.FirstOrDefault(x => x == "obs_nvenc_h264_tex");
-                if (id == null) throw new NotSupportedException("Kein unterstützter GPU-H.264-Encoder. Kein CPU-Fallback, um Spielleistung zu schützen.");
+                if (id == null) throw new NotSupportedException("No supported GPU H.264 encoder found (no CPU fallback).");
                 EncoderName = id == "h264_texture_amf" ? "AMD AMF · H.264 GPU" : "NVIDIA NVENC · H.264 GPU";
-                videoEncoder = Require(Obs.obs_video_encoder_create(id, "MonoClip GPU video", data.Handle, IntPtr.Zero), "GPU-Encoder"); Obs.obs_encoder_set_video(videoEncoder, Obs.obs_get_video());
+                videoEncoder = Require(Obs.obs_video_encoder_create(id, "MonoClip GPU video", data.Handle, IntPtr.Zero), "GPU encoder"); Obs.obs_encoder_set_video(videoEncoder, Obs.obs_get_video());
             }
             var staging = Path.Combine(s.ClipsDirectory, ".pending"); Directory.CreateDirectory(staging);
-            using (var data = new ObsData().Set("directory", staging.Replace('\\', '/')).Set("format", "Replay_%CCYY-%MM-%DD_%hh-%mm-%ss").Set("extension", "mkv").Set("allow_spaces", false).Set("max_time_sec", s.ClipSeconds + 1).Set("max_size_mb", CapturePolicy.BufferMegabytes(s))) output = Require(Obs.obs_output_create("replay_buffer", "MonoClip replay", data.Handle, IntPtr.Zero), "Replay-Puffer");
+            using (var data = new ObsData().Set("directory", staging.Replace('\\', '/')).Set("format", "Replay_%CCYY-%MM-%DD_%hh-%mm-%ss").Set("extension", "mkv").Set("allow_spaces", false).Set("max_time_sec", s.ClipSeconds + 1).Set("max_size_mb", CapturePolicy.BufferMegabytes(s))) output = Require(Obs.obs_output_create("replay_buffer", "MonoClip replay", data.Handle, IntPtr.Zero), "Replay buffer");
             Obs.obs_output_set_video_encoder(output, videoEncoder);
             AddAudioEncoder(0, "Playback mix"); if (s.DesktopAudio) AddAudioEncoder(1, "Desktop"); if (s.Microphone) AddAudioEncoder(2, "Microphone");
             var captureOutput = output; var generation = ++outputGeneration;
@@ -69,10 +69,10 @@ public sealed class ClipEngine : IClipEngine
 
             Obs.signal_handler_connect(Obs.obs_output_get_signal_handler(output), "saved", savedCallback, IntPtr.Zero);
 
-            if (!Obs.obs_output_start(output)) throw new InvalidOperationException("GPU-Puffer konnte nicht starten. " + Obs.Str(Obs.obs_output_get_last_error(output)));
-            started = DateTime.UtcNow; timer.Start(); UpdateCaptureTarget(new("Desktop", "", ForegroundTracker.Title(), usingWgc ? "desktop-wgc" : "desktop-dxgi"), "Desktop · " + monitorName); SetStatus("Puffer aktiv · Aufnahme läuft");
+            if (!Obs.obs_output_start(output)) throw new InvalidOperationException("GPU buffer failed to start. " + Obs.Str(Obs.obs_output_get_last_error(output)));
+            started = DateTime.UtcNow; timer.Start(); UpdateCaptureTarget(new("Desktop", "", ForegroundTracker.Title(), usingWgc ? "desktop-wgc" : "desktop-dxgi"), "Desktop · " + monitorName); SetStatus("Buffer active");
         }
-        catch (Exception e) { Release(); SetStatus("Fehler: " + e.Message); throw; }
+        catch (Exception e) { Release(); SetStatus("Error: " + e.Message); throw; }
     }
     void Fit(IntPtr item) { Obs.obs_sceneitem_set_bounds_type(item, 2); Obs.obs_sceneitem_set_bounds_alignment(item, 0); var bounds = new Obs.Vec2(settings.Width, settings.Height); Obs.obs_sceneitem_set_bounds(item, ref bounds); }
     void AddAudio(string id, string name, string device, uint mixers, uint channel)
@@ -82,7 +82,7 @@ public sealed class ClipEngine : IClipEngine
     }
     void AddAudioEncoder(nuint mixer, string name)
     {
-        using var data = new ObsData().Set("bitrate", 160L); var enc = Require(Obs.obs_audio_encoder_create("ffmpeg_aac", name, data.Handle, mixer, IntPtr.Zero), "AAC-Encoder"); audioEncoders.Add(enc); Obs.obs_encoder_set_audio(enc, Obs.obs_get_audio()); Obs.obs_output_set_audio_encoder(output, enc, (nuint)(audioEncoders.Count - 1));
+        using var data = new ObsData().Set("bitrate", 160L); var enc = Require(Obs.obs_audio_encoder_create("ffmpeg_aac", name, data.Handle, mixer, IntPtr.Zero), "AAC encoder"); audioEncoders.Add(enc); Obs.obs_encoder_set_audio(enc, Obs.obs_get_audio()); Obs.obs_output_set_audio_encoder(output, enc, (nuint)(audioEncoders.Count - 1));
     }
     void SelectMonitor(bool force = false)
     {
@@ -92,7 +92,7 @@ public sealed class ClipEngine : IClipEngine
         {
             var props = Obs.obs_source_properties(desktop); try { var prop = Obs.obs_properties_get(props, "monitor_id"); for (nuint i = 0; i < Obs.obs_property_list_item_count(prop); i++) { var value = Obs.Str(Obs.obs_property_list_item_string(prop, i)); if (value != "DUMMY") { id = value; break; } } } finally { Obs.obs_properties_destroy(props); }
         }
-        if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("Kein Bildschirm für GPU-Aufnahme gefunden.");
+        if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("No display found for GPU capture.");
         usingWgc = wgcMonitors.Contains(id); monitorChanged = DateTime.UtcNow;
         using var data = new ObsData().Set("monitor_id", id).Set("method", usingWgc ? 2L : 1L).Set("capture_cursor", true).Set("force_sdr", true); Obs.obs_source_update(desktop, data.Handle); monitorId = id;
         monitorName = selected.Name;
@@ -107,15 +107,15 @@ public sealed class ClipEngine : IClipEngine
     {
         try
         {
-            if (!IsRunning) { timer.Stop(); SetStatus("Aufnahme wurde unerwartet beendet. " + (output == IntPtr.Zero ? "" : Obs.Str(Obs.obs_output_get_last_error(output)))); return; }
+            if (!IsRunning) { timer.Stop(); SetStatus("Capture stopped unexpectedly. " + (output == IntPtr.Zero ? "" : Obs.Str(Obs.obs_output_get_last_error(output)))); return; }
             var cd = new Obs.CallData(); bool nowHooked = false; string exe = "", title = "";
             try { Obs.proc_handler_call(Obs.obs_source_get_proc_handler(game), "get_hooked", ref cd); Obs.calldata_get_data(ref cd, "hooked", out var value, 1); nowHooked = value != 0; if (nowHooked) { Obs.calldata_get_string(ref cd, "executable", out var p); exe = Obs.Str(p); Obs.calldata_get_string(ref cd, "title", out p); title = Obs.Str(p); } } finally { Obs.bfree(cd.Stack); }
             hooked = nowHooked; FollowCursor(exe, title);
             bool slowSave;
             lock (saveGate) slowSave = pending is not null && DateTime.UtcNow - pending.At > TimeSpan.FromSeconds(20);
-            if (slowSave && !Status.StartsWith("Clip-Speicherung dauert")) SetStatus("Clip-Speicherung dauert zu lange. Details in capture.log.");
+            if (slowSave && !Status.StartsWith("Saving the clip is taking")) SetStatus("Saving the clip is taking too long. See capture.log.");
         }
-        catch (Exception e) { SetStatus("Fehler: " + e.Message); }
+        catch (Exception e) { SetStatus("Error: " + e.Message); }
     }
     // Capture what the mouse is over: the hooked game, any other window, or the monitor for the desktop.
     void FollowCursor(string gameExe, string gameTitle)
@@ -130,13 +130,13 @@ public sealed class ClipEngine : IClipEngine
         {
             case CaptureKind.Game:
                 StopWarming(); Show(gameItem);
-                var gameName = Path.GetFileNameWithoutExtension(gameExe); if (string.IsNullOrWhiteSpace(gameName)) gameName = "Spiel";
-                UpdateCaptureTarget(new(gameName, gameExe, gameTitle, "game"), "Spiel · " + gameName);
+                var gameName = Path.GetFileNameWithoutExtension(gameExe); if (string.IsNullOrWhiteSpace(gameName)) gameName = "Game";
+                UpdateCaptureTarget(new(gameName, gameExe, gameTitle, "game"), "Game · " + gameName);
                 break;
             case CaptureKind.Window when candidateInfo != null:
                 var ready = FollowWindow(candidateHandle, candidateInfo);
                 // Not a game hook: window clips stay in the Desktop folder.
-                if (ready == true) UpdateCaptureTarget(new("Desktop", candidateInfo.Executable, candidateInfo.Title, "window"), "Fenster · " + Path.GetFileNameWithoutExtension(candidateInfo.Executable));
+                if (ready == true) UpdateCaptureTarget(new("Desktop", candidateInfo.Executable, candidateInfo.Title, "window"), "Window · " + Path.GetFileNameWithoutExtension(candidateInfo.Executable));
                 else if (ready == false || shownItem == desktopItem) ShowDesktop();
                 break;
             default:
@@ -178,29 +178,29 @@ public sealed class ClipEngine : IClipEngine
         SelectMonitor(); Show(desktopItem);
         if (!usingWgc && Obs.obs_source_get_width(desktop) == 0 && DateTime.UtcNow - monitorChanged > TimeSpan.FromSeconds(2))
         {
-            using var fallback = new ObsData().Set("monitor_id", monitorId).Set("method", 2L).Set("capture_cursor", true).Set("force_sdr", true); Obs.obs_source_update(desktop, fallback.Handle); usingWgc = true; wgcMonitors.Add(monitorId); SetStatus("Puffer aktiv · Windows-GPU-Aufnahme als Fallback");
+            using var fallback = new ObsData().Set("monitor_id", monitorId).Set("method", 2L).Set("capture_cursor", true).Set("force_sdr", true); Obs.obs_source_update(desktop, fallback.Handle); usingWgc = true; wgcMonitors.Add(monitorId); SetStatus("Buffer active · WGC fallback");
         }
         UpdateCaptureTarget(new("Desktop", "", ForegroundTracker.Title(), usingWgc ? "desktop-wgc" : "desktop-dxgi"), "Desktop · " + monitorName);
     }
     public void SaveClip()
     {
-        if (!IsRunning) throw new InvalidOperationException("Puffer ist gestoppt. Erst die Aufnahme starten.");
-        if (DateTime.UtcNow - started < TimeSpan.FromSeconds(2)) throw new InvalidOperationException("Puffer läuft gerade an. Bitte kurz warten.");
+        if (!IsRunning) throw new InvalidOperationException("Buffer is stopped.");
+        if (DateTime.UtcNow - started < TimeSpan.FromSeconds(2)) throw new InvalidOperationException("Buffer is still starting.");
         Tick();
         lock (saveGate)
         {
-            if (pending != null) throw new InvalidOperationException("Ein Clip wird bereits gespeichert.");
+            if (pending != null) throw new InvalidOperationException("A clip is already being saved.");
             var save = new Pending(outputGeneration, Guid.NewGuid().ToString("N"), context, settings with { }, EncoderName, DateTime.UtcNow);
             // Bind the native result path to this immutable request. libobs' saved
             // signal has no ID; timestamps alone can reuse a moved staging filename.
             using (var data = new ObsData().Set("format", "Replay_%CCYY-%MM-%DD_%hh-%mm-%ss_" + save.Request)) Obs.obs_output_update(output, data.Handle);
             pending = save; saveError = null;
             var cd = new Obs.CallData();
-            try { if (!Obs.proc_handler_call(Obs.obs_output_get_proc_handler(output), "save", ref cd)) throw new InvalidOperationException("Replay-Speicherung nicht verfügbar."); }
+            try { if (!Obs.proc_handler_call(Obs.obs_output_get_proc_handler(output), "save", ref cd)) throw new InvalidOperationException("Replay saving is not available."); }
             catch { if (ReferenceEquals(pending, save)) pending = null; throw; }
             finally { Obs.bfree(cd.Stack); }
         }
-        SetStatus("Clip wird gespeichert …");
+        SetStatus("Saving clip…");
     }
     static bool MatchesRequest(string path, Pending save) => !string.IsNullOrWhiteSpace(path) && Path.GetFileNameWithoutExtension(path).EndsWith("_" + save.Request, StringComparison.Ordinal);
     static string LastReplay(IntPtr captureOutput)
@@ -228,11 +228,11 @@ public sealed class ClipEngine : IClipEngine
                     try
                     {
                         var record = ClipLibrary.Store(path, save.Settings.ClipsDirectory, save.Context, save.Settings, save.Encoder);
-                        Post(() => { if (generation == outputGeneration) SetStatus(IsRunning ? "Puffer aktiv · Clip gespeichert" : "Puffer gestoppt · Clip gespeichert"); ClipSaved?.Invoke(this, new(record)); });
+                        Post(() => { if (generation == outputGeneration) SetStatus(IsRunning ? "Buffer active · clip saved" : "Buffer stopped · clip saved"); ClipSaved?.Invoke(this, new(record)); });
                     }
                     catch (Exception e)
                     {
-                        var error = "Clip bleibt erhalten: " + path + " · " + e.Message;
+                        var error = "Clip kept at " + path + " · " + e.Message;
                         lock (saveGate) saveError = error;
                         Post(() => { if (generation == outputGeneration) SetStatus(error); });
                     }
@@ -240,11 +240,11 @@ public sealed class ClipEngine : IClipEngine
                 pending = null;
             }
         }
-        catch (Exception e) { Post(() => SetStatus("Clip-Fehler: " + e.Message)); }
+        catch (Exception e) { Post(() => SetStatus("Clip error: " + e.Message)); }
     }
     void Post(Action action) { try { if (!dispatcher.IsDisposed && dispatcher.IsHandleCreated) dispatcher.BeginInvoke(action); } catch (InvalidOperationException) { } }
     public void Apply(AppSettings s) { s.Validate(); if (settings.Width == s.Width && settings.Height == s.Height && settings.Fps == s.Fps && settings.ClipSeconds == s.ClipSeconds && settings.ClipsDirectory == s.ClipsDirectory && settings.Microphone == s.Microphone && settings.DesktopAudio == s.DesktopAudio && settings.MicrophoneDevice == s.MicrophoneDevice && settings.DesktopDevice == s.DesktopDevice) { settings = s with { }; return; } var old = settings; bool running = IsRunning; if (!running) { settings = s with { }; return; } Stop(); try { Start(s); } catch { try { Start(old); } catch { } throw; } }
-    public void Stop() { Release(); SetStatus(saveError ?? "Puffer gestoppt"); }
+    public void Stop() { Release(); SetStatus(saveError ?? "Buffer stopped"); }
     void Release()
     {
         timer.Stop();
@@ -257,7 +257,7 @@ public sealed class ClipEngine : IClipEngine
             while (Obs.obs_output_active(output))
             {
                 lock (saveGate) { if (pending == null || MatchesRequest(LastReplay(output), pending)) break; }
-                if (clock.Elapsed > TimeSpan.FromSeconds(20)) throw new TimeoutException("Native Clip-Speicherung ist noch nicht abgeschlossen. Puffer und Anfrage bleiben erhalten.");
+                if (clock.Elapsed > TimeSpan.FromSeconds(20)) throw new TimeoutException("Native clip save has not finished. Buffer and request are kept.");
                 Thread.Sleep(10);
             }
             if (Obs.obs_output_active(output)) Obs.obs_output_force_stop(output);
@@ -267,7 +267,7 @@ public sealed class ClipEngine : IClipEngine
             Obs.obs_output_release(output);
             lock (saveGate)
             {
-                if (pending is { } save) saveError = "Clip-Speicherung nicht abgeschlossen. Vorhandene Dateien bleiben in " + Path.Combine(save.Settings.ClipsDirectory, ".pending");
+                if (pending is { } save) saveError = "Clip save did not finish. Existing files remain in " + Path.Combine(save.Settings.ClipsDirectory, ".pending");
                 ++outputGeneration; pending = null; output = IntPtr.Zero;
             }
             savedCallback = null;

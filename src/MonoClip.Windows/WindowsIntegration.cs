@@ -9,12 +9,12 @@ public static class WindowsIntegration
     public static void SetAutostart(bool enabled, string executablePath, string registryPath = RunKey)
     {
         using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(registryPath, true)
-            ?? throw new IOException("Windows-Autostart konnte nicht geöffnet werden.");
+            ?? throw new IOException("Could not open the Windows startup key.");
         var command = enabled ? BuildAutostartCommand(executablePath) : null;
         if (enabled) key.SetValue("MonoClip", command!, Microsoft.Win32.RegistryValueKind.String);
         else key.DeleteValue("MonoClip", false);
         if (!Equals(key.GetValue("MonoClip"), command))
-            throw new IOException("Windows-Autostart konnte nicht bestätigt werden.");
+            throw new IOException("Could not verify the Windows startup entry.");
     }
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint sfgaoIn, out uint sfgaoOut);
     [DllImport("shell32.dll")] static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr[]? items, uint flags);
@@ -38,7 +38,7 @@ public static class WindowsIntegration
     public static string BuildAutostartCommand(string executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath) || executablePath.Contains('"'))
-            throw new ArgumentException("Ungültiger Programmpfad.", nameof(executablePath));
+            throw new ArgumentException("Invalid program path.", nameof(executablePath));
         return $"\"{executablePath}\" --minimized";
     }
 }
