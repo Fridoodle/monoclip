@@ -8,10 +8,10 @@ public sealed class SettingsForm : Form
     // Logical (96 DPI) sizes. Below NarrowContent the form switches to a single column: label above control.
     const int LogicalWidth = 660, LogicalHeight = 900, LogicalMinWidth = 380, LogicalMinHeight = 320, NarrowContent = 430, WidePadding = 28, NarrowPadding = 16;
     AppSettings original; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
-    readonly ComboBox resolution = new(), fps = new(), games = new(); readonly NumericUpDown duration = new(); readonly TextBox hotkey = new(), directory = new();
+    readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox(); readonly NumericUpDown duration = new MonoNumeric(); readonly TextBox hotkey = new(), directory = new();
     readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new(), autoShare = new();
     readonly MonoSlider quality = new("Performance", "Balanced", "Quality"); readonly List<Control> advancedOnly = [];
-    readonly NumericUpDown shareMinutes = new(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new(); readonly Button pickButton = new MonoButton(); Action<string>? shareFile;
+    readonly NumericUpDown shareMinutes = new MonoNumeric(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new(); readonly Button pickButton = new MonoButton(); Action<string>? shareFile;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }; IClipSharer? sharer;
     readonly Label status = new(), target = new(), budget = new(), feedback = new(); readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton();
     readonly TableLayoutPanel table = new() { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(WidePadding, 18, WidePadding, 18) };
@@ -67,6 +67,7 @@ public sealed class SettingsForm : Form
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
         scroll.ClientSizeChanged += (_, _) => Relayout(); DpiChanged += (_, _) => { narrow = null; Relayout(); };
         scroll.HandleCreated += (_, _) => DarkScrollbars(scroll.Handle);
+        EnableDrop(this);
         engine.StatusChanged += EngineStatus; ApplyMode(); UpdateStatus(); Relayout();
     }
 
@@ -185,6 +186,16 @@ public sealed class SettingsForm : Form
         this.sharer = sharer; this.shareFile = shareFile; pickButton.Enabled = true;
         shareButton.Click += (_, _) => toggleShare(); copyLinkButton.Click += (_, _) => copyLink(); shareTicker.Start(); UpdateShareControls();
     }
+    // Drop a clip anywhere on the window to share it (same checks as "Share a file…").
+    void EnableDrop(Control control)
+    {
+        control.AllowDrop = true;
+        control.DragEnter += (_, e) => { var file = shareFile != null ? DroppedFile(e.Data) : null; e.Effect = file != null ? DragDropEffects.Copy : DragDropEffects.None; if (file != null) Feedback("Drop to share " + Path.GetFileName(file)); };
+        control.DragDrop += (_, e) => { if (DroppedFile(e.Data) is { } file) DropFiles([file]); };
+        foreach (Control child in control.Controls) EnableDrop(child);
+    }
+    static string? DroppedFile(IDataObject? data) => data?.GetData(DataFormats.FileDrop) is string[] { Length: 1 } files ? files[0] : null;
+    internal void DropFiles(string[] files) { if (shareFile != null && files.Length == 1) shareFile(files[0]); }
     void PickAndShare()
     {
         using var dialog = new OpenFileDialog { Title = "Choose a clip to share", Filter = "Videos (*.mkv;*.mp4)|*.mkv;*.mp4", InitialDirectory = Directory.Exists(original.ClipsDirectory) ? original.ClipsDirectory : "", CheckFileExists = true };

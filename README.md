@@ -20,7 +20,7 @@ Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GP
 2. Run `MonoClip.exe`. The buffer starts automatically.
 3. Press the hotkey to save a clip. Right-click the tray icon for settings, sharing and the clip folder.
 
-The folder contains `MonoClip.exe` (a small launcher), `app\` and `info\`. Settings and logs are stored in `%LOCALAPPDATA%\MonoClip`. To update, exit MonoClip and extract the new version into a new folder.
+The folder contains `MonoClip.exe` (a small launcher), `app\` and `info\`. Settings and logs are stored in `%LOCALAPPDATA%\MonoClip`. To update, exit MonoClip and extract the new version into a new folder. "Start with Windows" follows the version you started last.
 
 ## Settings
 
@@ -49,7 +49,7 @@ Clips are MKV files sorted into one folder per game (`Desktop` for everything el
 
 > **Sharing is experimental.** It relies on Cloudflare's free quick tunnels, which have no uptime guarantee. Creating a link can fail or take longer, especially after many links in a short time. If it fails, try again a few minutes later.
 
-**Share last clip** (tray or settings) creates a link and copies it to the clipboard. With **Share new clips automatically** this happens after every clip; **Share a file…** shares any MKV/MP4 up to 500 MB.
+**Share last clip** (tray or settings) creates a link and copies it to the clipboard. With **Share new clips automatically** this happens after every clip. To share any MKV/MP4 up to 500 MB, drag it onto the settings window or use **Share a file…**.
 
 - The clip is remuxed to MP4 and served from `127.0.0.1` through a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). This works behind CGNAT and does not expose your IP address.
 - The link stops working after the chosen time or when sharing is stopped. A working tunnel is kept for 30 minutes after the last share, so the next clip is shared in about a second.
