@@ -46,11 +46,19 @@ try {
         if((int)got.StatusCode!=200||got.Content.Headers.ContentType?.MediaType!="video/mp4"||!body.SequenceEqual(expected)){var tun=(MonoClip.Windows.Share.CloudflaredTunnel?)typeof(MonoClip.Windows.Share.ClipShare).GetField("tunnel",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(share);throw new Exception($"public link did not return the clip: {(int)got.StatusCode} {body.Length}/{expected.Length} {System.Text.Encoding.ASCII.GetString(body.Take(40).ToArray())} | "+string.Join(" | ",tun?.RecentLog.TakeLast(8)??["no tunnel"]));}
         var range=new HttpRequestMessage(HttpMethod.Get,info.Url);range.Headers.Range=new(0,1023);var part=http.Send(range);if((int)part.StatusCode!=206)throw new Exception("range through tunnel: "+(int)part.StatusCode);
         var guess=http.GetAsync(info.Url.Replace(info.Url.Split('/')[3],SharePolicyToken())).GetAwaiter().GetResult();if((int)guess.StatusCode!=404)throw new Exception("wrong token served: "+(int)guess.StatusCode);
+        // Second share reuses the working tunnel: same host, new path, much faster; the first link stops working.
+        var again=share.ShareAsync(source,TimeSpan.FromMinutes(5));var second=System.Diagnostics.Stopwatch.StartNew();
+        while(!again.IsCompleted&&second.Elapsed.TotalSeconds<120){Application.DoEvents();Thread.Sleep(20);}
+        var next=again.GetAwaiter().GetResult();Console.WriteLine($"TIME second link ready after {second.Elapsed.TotalSeconds:0.0} s");
+        if(new Uri(next.Url).Host!=new Uri(info.Url).Host||next.Url==info.Url)throw new Exception("tunnel was not reused for the second clip");
+        if((int)http.GetAsync(info.Url).GetAwaiter().GetResult().StatusCode!=404)throw new Exception("first link still works after the second share");
+        if((int)http.GetAsync(next.Url).GetAwaiter().GetResult().StatusCode!=200)throw new Exception("second link does not work");
+        local=Directory.EnumerateFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","share"),"*.mp4").Single();info=next;
         share.Stop();Application.DoEvents();
         if(share.Current!=null||File.Exists(local))throw new Exception("stop left the share or its copy behind");
         Thread.Sleep(3000);int after;try{after=(int)http.GetAsync(info.Url).GetAwaiter().GetResult().StatusCode;}catch(HttpRequestException){after=-1;}
         if(after==200)throw new Exception("link still serves the clip after stop");
-        Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, offline after stop (status {after})");return 0;
+        Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, tunnel reused for a second clip, offline after stop (status {after})");return 0;
         static string SharePolicyToken()=>MonoClip.Core.SharePolicy.NewToken();
     }
     if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error")) return RegressionTests.Run(args);

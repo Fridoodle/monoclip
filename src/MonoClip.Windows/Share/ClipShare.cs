@@ -3,11 +3,16 @@ using System.Net;
 using System.Net.Sockets;
 namespace MonoClip.Windows.Share;
 
-// One clip at a time, reachable for the chosen duration, then the tunnel, server and MP4 copy are removed.
+// One clip at a time, reachable for the chosen duration. The MP4 copy is removed when the share ends.
+// A tunnel that works is kept for KeepTunnel after the last share and reused for the next clip: new
+// quick tunnels take ~6 s and sometimes never get a public DNS record (HTTP 530), more often when many
+// are created in a row. Each clip still gets its own random path; the previous one stops working.
 public sealed class ClipShare : IClipSharer
 {
+    const int Attempts = 3;
+    static readonly TimeSpan KeepTunnel = TimeSpan.FromMinutes(30);
     static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MonoClip", "share");
-    readonly System.Windows.Forms.Timer expiry = new(); readonly SynchronizationContext ui;
+    readonly System.Windows.Forms.Timer expiry = new(), idle = new(); readonly SynchronizationContext ui;
     ClipShareServer? server; CloudflaredTunnel? tunnel; string? copy; CancellationTokenSource? starting;
     public ShareInfo? Current { get; private set; }
     public bool IsStarting => starting != null;
@@ -17,6 +22,7 @@ public sealed class ClipShare : IClipSharer
     {
         ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         expiry.Tick += (_, _) => Stop();
+        idle.Tick += (_, _) => { idle.Stop(); if (Current == null && starting == null) CloseTunnel(); };
         // Copies from a crashed session are never served again.
         try { if (Directory.Exists(Root)) foreach (var f in Directory.EnumerateFiles(Root)) TryDelete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
@@ -24,33 +30,34 @@ public sealed class ClipShare : IClipSharer
     {
         if (duration < TimeSpan.FromMinutes(SharePolicy.MinMinutes) || duration > TimeSpan.FromMinutes(SharePolicy.MaxMinutes)) throw new ArgumentOutOfRangeException(nameof(duration));
         if (!File.Exists(clipPath)) throw new FileNotFoundException("Clip not found.", clipPath);
-        Stop(); var cancel = new CancellationTokenSource(); starting = cancel; Changed?.Invoke(this, EventArgs.Empty);
+        Stop(); idle.Stop(); var cancel = new CancellationTokenSource(); starting = cancel; Changed?.Invoke(this, EventArgs.Empty);
         var token = SharePolicy.NewToken(); var target = Path.Combine(Root, token + ".mp4"); Task remux = Task.CompletedTask;
         try
         {
             Directory.CreateDirectory(Root); copy = target;
-            var local = server = new ClipShareServer(target, SharePolicy.RequestPath(token, clipPath), cacheSeconds: (int)duration.TotalSeconds) { Ready = false }; local.Start();
-            // Cloudflare needs about 6 s to assign a link: prepare the MP4 in the meantime, not before.
-            progress?.Report("Preparing clip · requesting link…");
+            var local = server ??= StartServer();
+            local.Publish(target, SharePolicy.RequestPath(token, clipPath), (int)duration.TotalSeconds, ready: false);
+            progress?.Report(tunnel != null ? "Preparing clip…" : "Preparing clip · requesting link…");
+            // Cloudflare needs about 6 s to assign a new link: prepare the MP4 in the meantime, not before.
             remux = Task.Run(() => ClipRemux.ToFastStartMp4(clipPath, target), cancel.Token);
             CloudflaredTunnel t;
             for (int attempt = 1; ; attempt++)
             {
-                t = tunnel = await CloudflaredTunnel.StartAsync(local.Port, progress, cancel.Token);
+                bool fresh = tunnel == null;
+                t = tunnel ??= await OpenTunnelAsync(local, progress, cancel.Token);
                 await remux; local.Ready = true; cancel.Token.ThrowIfCancellationRequested();
+                // Never ask for a brand-new host before Cloudflare has set it up (~1.5 s after registering):
+                // an early request makes the edge cache "no such tunnel" and answer 530 for up to 10+ s.
+                // It would also make DNS resolvers, including this PC's, cache "does not exist".
+                if (fresh) { var settle = t.RegisteredAt + TimeSpan.FromSeconds(2.5) - DateTime.UtcNow; if (settle > TimeSpan.Zero) await Task.Delay(settle, cancel.Token); }
                 progress?.Report("Checking link…");
-                // A working tunnel answers within about a second of registering. One that has no public DNS record
-                // (Cloudflare sometimes hands those out, more often after many links in a row) never does.
                 var problem = await ProbeUntilReachableAsync(t.PublicUrl + local.RequestPath, TimeSpan.FromSeconds(6), cancel.Token);
                 if (problem == null) break;
-                if (attempt == 2) throw new InvalidOperationException($"Cloudflare did not provide a working link ({problem}). Try again in a few minutes.");
+                CloseTunnel(keepServer: true);
+                if (attempt == Attempts) throw new InvalidOperationException($"Cloudflare did not provide a working link ({problem}). Try again in a few minutes.");
                 progress?.Report("No response · requesting a new link…");
-                tunnel = null; t.Dispose();
+                await Task.Delay(TimeSpan.FromSeconds(2), cancel.Token);
             }
-            t.Exited += (_, _) => ui.Post(_ => { if (ReferenceEquals(tunnel, t)) Stop(); }, null);
-            // The public DNS record follows the registration by about 1.5 s. Asking too early would make
-            // resolvers (including Windows on this PC) cache "does not exist" for a minute.
-            var settle = t.RegisteredAt.AddSeconds(2) - DateTime.UtcNow; if (settle > TimeSpan.Zero) await Task.Delay(settle, cancel.Token);
             // The window counts from the moment the link is handed out, not from the start of preparation.
             var info = new ShareInfo(t.PublicUrl + local.RequestPath, DateTimeOffset.Now + duration, clipPath);
             Current = info; expiry.Interval = (int)duration.TotalMilliseconds; expiry.Start();
@@ -64,6 +71,19 @@ public sealed class ClipShare : IClipSharer
             throw;
         }
         finally { if (ReferenceEquals(starting, cancel)) starting = null; cancel.Dispose(); Changed?.Invoke(this, EventArgs.Empty); }
+    }
+    static ClipShareServer StartServer() { var s = new ClipShareServer(); s.Start(); return s; }
+    async Task<CloudflaredTunnel> OpenTunnelAsync(ClipShareServer local, IProgress<string>? progress, CancellationToken cancel)
+    {
+        var t = await CloudflaredTunnel.StartAsync(local.Port, progress, cancel);
+        // A tunnel that dies ends the current share; the next share opens a new one.
+        t.Exited += (_, _) => ui.Post(_ => { if (!ReferenceEquals(tunnel, t)) return; CloseTunnel(keepServer: true); if (Current != null) Stop(); }, null);
+        return t;
+    }
+    void CloseTunnel(bool keepServer = false)
+    {
+        var t = tunnel; tunnel = null; t?.Dispose();
+        if (!keepServer) { server?.Dispose(); server = null; }
     }
     // Checks the route through Cloudflare without looking up the brand-new host name: connect to the
     // edge addresses of trycloudflare.com and let TLS/Host select the tunnel. IPv4 and IPv6 are probed
@@ -113,15 +133,17 @@ public sealed class ClipShare : IClipSharer
         catch (HttpRequestException e) { return (false, false, e.Message); }
         catch (TaskCanceledException) when (!cancel.IsCancellationRequested) { return (false, false, "timeout"); }
     }
+    // Ends the current share: its path stops working and the copy is deleted. The tunnel stays for reuse.
     public void Stop()
     {
         bool changed = Current != null || starting != null;
         starting?.Cancel(); starting = null; expiry.Stop();
-        tunnel?.Dispose(); tunnel = null; server?.Dispose(); server = null;
+        server?.Unpublish();
         if (copy != null) { TryDelete(copy); copy = null; }
         Current = null;
+        if (tunnel != null) { idle.Interval = (int)KeepTunnel.TotalMilliseconds; idle.Start(); }
         if (changed) Changed?.Invoke(this, EventArgs.Empty);
     }
     static void TryDelete(string path) { try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
-    public void Dispose() { Stop(); expiry.Dispose(); }
+    public void Dispose() { Stop(); CloseTunnel(); expiry.Dispose(); idle.Dispose(); }
 }

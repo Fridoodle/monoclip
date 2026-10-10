@@ -2,7 +2,7 @@
 
 Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GPU-encoded buffer in RAM and saves them on a hotkey. It runs in the tray.
 
-> Beta, Windows 11 x64. Requires an AMD (AMF) or NVIDIA (NVENC) GPU encoder. Tested on AMD hardware; NVIDIA is untested. No Intel-only, CPU encoding or HDR support.
+> Windows 11 x64. Requires an AMD (AMF) or NVIDIA (NVENC) GPU encoder. Tested on AMD hardware; NVIDIA is untested. No Intel-only, CPU encoding or HDR support.
 
 ## Features
 
@@ -47,13 +47,15 @@ Clips are MKV files sorted into one folder per game (`Desktop` for everything el
 
 ## Sharing
 
+> **Sharing is experimental.** It relies on Cloudflare's free quick tunnels, which have no uptime guarantee. Creating a link can fail or take longer, especially after many links in a short time. If it fails, try again a few minutes later.
+
 **Share last clip** (tray or settings) creates a link and copies it to the clipboard. With **Share new clips automatically** this happens after every clip; **Share a file…** shares any MKV/MP4 up to 500 MB.
 
 - The clip is remuxed to MP4 and served from `127.0.0.1` through a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). This works behind CGNAT and does not expose your IP address.
-- The link is removed after the chosen time, when sharing is stopped, or when MonoClip exits.
+- The link stops working after the chosen time or when sharing is stopped. A working tunnel is kept for 30 minutes after the last share, so the next clip is shared in about a second.
 - `cloudflared` (~55 MB) is downloaded from GitHub on first use and verified by SHA256.
 - Anyone with the link can watch and download the clip while it is online. Viewers stream from your upload connection (max. 6 connections).
-- Quick tunnels have no uptime guarantee and are rate limited. Discord embeds videos up to roughly 100 MB.
+- Discord embeds videos up to roughly 100 MB.
 
 ## Troubleshooting
 

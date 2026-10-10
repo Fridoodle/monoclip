@@ -111,4 +111,4 @@ jobs:
           test -f "$zip" || { echo "Tag $GITHUB_REF_NAME does not match <Version> in MonoClip.Windows.csproj"; exit 1; }
           notes=$(awk -v v="## ${version}" 'index($0,v)==1{f=1;next} /^## /{f=0} f' CHANGELOG.md)
           printf '%s\n\n**Download:** `MonoClip-%s-win-x64-portable.zip` – extract and run `MonoClip.exe`. No installer, no admin rights.\n' "$notes" "$version" > notes.md
-          gh release create "$GITHUB_REF_NAME" "$zip" dist/SHA256SUMS.txt dist/OBS-Studio-32.2.2-Sources.tar.gz --title "MonoClip ${version} Beta" --notes-file notes.md --prerelease
+          gh release create "$GITHUB_REF_NAME" "$zip" dist/SHA256SUMS.txt dist/OBS-Studio-32.2.2-Sources.tar.gz --title "MonoClip ${version}" --notes-file notes.md --latest
