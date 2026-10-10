@@ -39,6 +39,8 @@ internal static class Obs
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr obs_property_list_item_name(IntPtr prop, nuint index);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr obs_property_list_item_string(IntPtr prop, nuint index);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_properties_destroy(IntPtr props);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_source_inc_showing(IntPtr source);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_source_dec_showing(IntPtr source);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_source_set_audio_mixers(IntPtr source, uint mixers);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr obs_source_get_proc_handler(IntPtr source);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_set_output_source(uint channel, IntPtr source);

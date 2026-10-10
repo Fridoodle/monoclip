@@ -24,6 +24,9 @@ try {
         if(!File.Exists(fixture))throw new Exception("Direct3D game fixture missing");
         using var game=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fixture,args.Contains("--exclusive")?"--exclusive":""){UseShellExecute=false})!;
         try {
+            // Capture follows the mouse: put the cursor over the fixture like a player would.
+            for(int i=0;i<100&&game.MainWindowHandle==IntPtr.Zero;i++){Thread.Sleep(50);game.Refresh();}
+            var bounds=Screen.FromHandle(game.MainWindowHandle).Bounds;Cursor.Position=new System.Drawing.Point(bounds.Left+bounds.Width/2,bounds.Top+bounds.Height/2);
             using var engine=new ClipEngine();var s=new MonoClip.Core.AppSettings{ClipSeconds=5,DesktopAudio=false,Microphone=false,ClipsDirectory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","GameVerificationClips")};
             MonoClip.Core.ClipRecord? clip=null;engine.ClipSaved+=(_,e)=>clip=e.Clip;engine.Start(s);var clock=System.Diagnostics.Stopwatch.StartNew();bool saved=false;
             while(clock.Elapsed.TotalSeconds<20&&clip==null){Application.DoEvents();Thread.Sleep(25);if(clock.Elapsed.TotalSeconds>10&&!saved){if(!engine.CaptureTarget.StartsWith("Spiel"))throw new Exception("Game not auto-detected: "+engine.CaptureTarget+" "+engine.Status);engine.SaveClip();saved=true;}}
@@ -44,7 +47,7 @@ try {
         while(clock.Elapsed.TotalSeconds<(benchmark?50:22)&&result==null) {Application.DoEvents();Thread.Sleep(30);if(clock.Elapsed.TotalSeconds>(benchmark?38:8)&&!saved){engine.SaveClip();saved=true;}}
         if(result==null||!File.Exists(result.Path))throw new Exception("replay save failed: "+engine.Status);
         if(engine.TotalFrames<settings.Fps*5)throw new Exception("insufficient frames: "+engine.TotalFrames);
-        Console.WriteLine("PASS real replay "+result.Path+" encoder="+engine.EncoderName+" frames="+engine.TotalFrames+" dropped="+engine.DroppedFrames);
+        Console.WriteLine("PASS real replay "+result.Path+" target="+engine.CaptureTarget+" mode="+result.Context.CaptureMode+" encoder="+engine.EncoderName+" frames="+engine.TotalFrames+" dropped="+engine.DroppedFrames);
         int before=engine.TotalFrames;engine.Apply(settings with{Hotkey="Ctrl+Shift+F10"});if(engine.TotalFrames<before)throw new Exception("non-capture settings discarded replay buffer");
         engine.Stop();if(engine.IsRunning)throw new Exception("stop did not stop");
         return 0;

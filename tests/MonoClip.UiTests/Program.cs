@@ -77,7 +77,7 @@ internal static class Program
         Test("Tray-only launch has no visible taskbar window and settings can reopen",()=>{
             var type=Assembly.GetExecutingAssembly().GetType("MonoClip.Windows.UI.TrayAppContext")??throw new Exception("TrayAppContext missing");
             var dir=Path.Combine(Path.GetTempPath(),"MonoClip-ui-"+Guid.NewGuid());Directory.CreateDirectory(dir);
-            try {using var ctx=(ApplicationContext)Activator.CreateInstance(type,new object[]{new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Alt+Shift+F10",StartMinimized=true},Path.Combine(dir,"settings.json")})!;
+            try {using var ctx=(ApplicationContext)Activator.CreateInstance(type,new object[]{new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Alt+Shift+F10",StartMinimized=true,StartBufferOnLaunch=false},Path.Combine(dir,"settings.json")})!;
                 var tray=(NotifyIcon)type.GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;
                 var color=((ToolStripProfessionalRenderer)tray.ContextMenuStrip!.Renderer).ColorTable.MenuItemSelected;
                 if(color.R!=color.G||color.G!=color.B)throw new Exception("colored tray menu selection");
@@ -118,6 +118,41 @@ internal static class Program
                 type.GetMethod("SaveSettings",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(ctx,new object[]{settings with{ClipBeep=false}});success.Invoke(ctx,new object?[]{null,eventArgs});Equal(1,played);Equal(false,MonoClip.Core.SettingsStore.Load(Path.Combine(dir,"settings.json")).ClipBeep);
                 type.GetMethod("SaveSettings",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(ctx,new object[]{settings with{ClipBeep=true}});success.Invoke(ctx,new object?[]{null,eventArgs});Equal(2,played);
             }finally{Directory.Delete(dir,true);}
+        });
+        Test("Simple mode hides advanced settings and advanced mode reveals quality slider",()=>{
+            using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{Quality=MonoClip.Core.QualityPreset.Performance},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
+            Control F(string name)=>(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            foreach(var name in new[]{"resolution","fps","duration","hotkey","autostart","directory"})if(!F(name).Visible)throw new Exception(name+" missing in simple mode");
+            foreach(var name in new[]{"quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games"})if(F(name).Visible)throw new Exception(name+" visible in simple mode");
+            var budget=(Label)F("budget");if(!budget.Visible||!budget.Text.Contains("MB"))throw new Exception("estimated file size missing: "+budget.Text);
+            ((CheckBox)F("advanced")).Checked=true;Application.DoEvents();
+            foreach(var name in new[]{"quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games"})if(!F(name).Visible)throw new Exception(name+" hidden in advanced mode");
+            if(!budget.Text.Contains("Mbit/s"))throw new Exception("advanced estimate lacks bitrate: "+budget.Text);
+            var slider=F("quality");Equal(MonoClip.Core.QualityPreset.Performance,form.ReadSettings().Quality);var before=budget.Text;
+            slider.GetType().GetProperty("Value")!.SetValue(slider,2);Equal(MonoClip.Core.QualityPreset.Quality,form.ReadSettings().Quality);Equal(true,form.ReadSettings().AdvancedMode);if(budget.Text==before)throw new Exception("estimate ignores quality");
+            using(var image=new Bitmap(slider.Width,slider.Height)){slider.DrawToBitmap(image,slider.ClientRectangle);for(int x=0;x<image.Width;x++)for(int y=0;y<image.Height-slider.Font.Height-6;y++){var c=image.GetPixel(x,y);if(Math.Max(c.R,Math.Max(c.G,c.B))-Math.Min(c.R,Math.Min(c.G,c.B))>12)throw new Exception("slider is not monochrome");}}
+            form.Close();
+        });
+        Test("Default launch starts the replay buffer",()=>{
+            var dir=Path.Combine(Path.GetTempPath(),"MonoClip-ui-"+Guid.NewGuid());Directory.CreateDirectory(dir);var engine=new FakeEngine();
+            try{using var ctx=new MonoClip.Windows.UI.TrayAppContext(engine,new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F9"},Path.Combine(dir,"settings.json"));if(!engine.IsRunning)throw new Exception("buffer not started by default");}finally{Directory.Delete(dir,true);}
+        });
+        Test("Advanced mode toggle persists immediately",()=>{
+            MonoClip.Core.AppSettings? saved=null;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),s=>saved=s,()=>{},()=>{});
+            ((CheckBox)typeof(MonoClip.Windows.UI.SettingsForm).GetField("advanced",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!).Checked=true;
+            if(saved?.AdvancedMode!=true)throw new Exception("advanced mode not saved");
+        });
+        Test("Estimated size formatting",()=>{
+            Equal("5.0 MB",MonoClip.Windows.UI.SettingsForm.FormatSize(5).Replace(',','.'));Equal("58 MB",MonoClip.Windows.UI.SettingsForm.FormatSize(57.6));Equal("1.5 GB",MonoClip.Windows.UI.SettingsForm.FormatSize(1536).Replace(',','.'));
+        });
+        if(args.Contains("--reveal"))Test("Clip folder opens in Explorer with the newest clip selected",()=>{
+            var dir=Path.Combine(Path.GetTempPath(),"MonoClip-reveal-"+Guid.NewGuid());Directory.CreateDirectory(Path.Combine(dir,"Game"));Directory.CreateDirectory(Path.Combine(dir,"Desktop"));
+            var old=Path.Combine(dir,"Desktop","old.mkv");File.WriteAllText(old,"fixture");File.SetLastWriteTimeUtc(old,DateTime.UtcNow.AddHours(-1));var newest=Path.Combine(dir,"Game","newest.mkv");File.WriteAllText(newest,"fixture");
+            dynamic shell=Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;string? selected=null;
+            try{MonoClip.Windows.WindowsIntegration.OpenClipFolder(dir);var clock=System.Diagnostics.Stopwatch.StartNew();
+                while(selected==null&&clock.ElapsedMilliseconds<8000){Application.DoEvents();Thread.Sleep(200);foreach(dynamic w in shell.Windows()){try{if(string.Equals((string)w.Document.Folder.Self.Path,Path.GetDirectoryName(newest),StringComparison.OrdinalIgnoreCase)){foreach(dynamic item in w.Document.SelectedItems())selected=(string)item.Path;if(selected!=null)w.Quit();}}catch(Exception){}}}
+                Equal(newest,selected);
+            }finally{Thread.Sleep(300);Directory.Delete(dir,true);}
         });
         if(args.Contains("--play-beep"))Test("Real cached beep playback uses Windows audio successfully",()=>{
             using var sound=new MonoClip.Windows.UI.ClipBeepSound();sound.Play();Thread.Sleep(150);
