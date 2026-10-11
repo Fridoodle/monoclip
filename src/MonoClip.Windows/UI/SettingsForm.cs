@@ -11,7 +11,7 @@ public sealed class SettingsForm : Form
     readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox(); readonly NumericUpDown duration = new MonoNumeric(); readonly TextBox hotkey = new(), directory = new();
     readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new(), autoShare = new(), sortByApp = new(), directLink = new(), copyLink = new();
     readonly MonoSlider quality = new("Performance", "Balanced", "Quality"); readonly List<Control> advancedOnly = [];
-    readonly NumericUpDown shareMinutes = new MonoNumeric(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new(); readonly Button pickButton = new MonoButton(); Action<string>? shareFile;
+    readonly NumericUpDown shareMinutes = new MonoNumeric(); readonly Button shareButton = new MonoButton(), editButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new(); readonly Button pickButton = new MonoButton(); Action<string>? shareFile;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }; IClipSharer? sharer;
     readonly Label status = new(), target = new(), budget = new(), feedback = new(); readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton();
     readonly TableLayoutPanel table = new() { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(WidePadding, 18, WidePadding, 18) };
@@ -36,7 +36,7 @@ public sealed class SettingsForm : Form
         status.AutoSize = true; status.Font = new Font("Segoe UI Semibold", 11); Full(status); target.AutoSize = true; target.ForeColor = Muted; Full(target);
         var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = new Padding(0, 10, 0, 4) };
         StyleButton(toggleButton); toggleButton.Click += (_, _) => Run(toggle); StyleButton(clipButton); clipButton.Text = "Save clip"; clipButton.Click += (_, _) => Run(saveClip); actions.Controls.Add(toggleButton); actions.Controls.Add(clipButton);
-        StyleButton(shareButton); shareButton.AutoSizeMode = AutoSizeMode.GrowAndShrink; shareButton.Visible = false; actions.Controls.Add(shareButton); StyleButton(copyLinkButton); copyLinkButton.Text = "Copy link"; copyLinkButton.Visible = false; actions.Controls.Add(copyLinkButton); Full(actions);
+        StyleButton(shareButton); shareButton.AutoSizeMode = AutoSizeMode.GrowAndShrink; shareButton.Visible = false; actions.Controls.Add(shareButton); StyleButton(editButton); editButton.Text = "Export…"; editButton.Visible = false; actions.Controls.Add(editButton); StyleButton(copyLinkButton); copyLinkButton.Text = "Copy link"; copyLinkButton.Visible = false; actions.Controls.Add(copyLinkButton); Full(actions);
         shareStatus.AutoSize = true; shareStatus.ForeColor = Muted; shareStatus.Visible = false; shareStatus.Margin = new Padding(0, 2, 0, 4); Full(shareStatus); shareTicker.Tick += (_, _) => UpdateShareControls();
         Check(advanced, "Advanced settings", settings.AdvancedMode); advanced.Margin = new Padding(0, 10, 0, 0); advanced.CheckedChanged += (_, _) => { ApplyMode(); Run(() => { var next = original with { AdvancedMode = advanced.Checked }; saveSettings(next); original = next; }); };
         Section("CAPTURE");
@@ -57,14 +57,12 @@ public sealed class SettingsForm : Form
         var browse = Button("…", () => { using var dialog = new FolderBrowserDialog { InitialDirectory = directory.Text, Description = "Clip folder" }; if (dialog.ShowDialog(this) == DialogResult.OK) directory.Text = dialog.SelectedPath; }); browse.MinimumSize = new Size(Px(42), Px(30)); browse.Margin = Padding.Empty; pathPanel.Controls.Add(browse, 1, 0); Row("Folder", pathPanel);
         Check(sortByApp, "Sort clips by application", settings.SortByApp, true);
         StyleCombo(games); games.Items.Add("All clips"); games.SelectedIndex = 0; Row("Game", games, true);
-        var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Open folder", () => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory)))); var refresh = Button("Refresh", RefreshGames); libraryActions.Controls.Add(refresh); advancedOnly.Add(refresh); Full(libraryActions);
+        var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Open folder", () => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory)))); StyleButton(pickButton); pickButton.Text = "Export a file…"; pickButton.Enabled = false; pickButton.Click += (_, _) => PickAndShare(); libraryActions.Controls.Add(pickButton); var refresh = Button("Refresh", RefreshGames); libraryActions.Controls.Add(refresh); advancedOnly.Add(refresh); Full(libraryActions);
         Section("SHARING", true);
         Check(autoShare, "Share new clips automatically", settings.AutoShare, true);
         Check(copyLink, "Copy new share links to the clipboard", settings.CopyShareLink, true);
         Check(directLink, "Link to the video file instead of a player page", settings.DirectLink, true);
         shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.Value = settings.ShareMinutes; shareMinutes.BackColor = Black; shareMinutes.ForeColor = White; shareMinutes.BorderStyle = BorderStyle.FixedSingle; shareMinutes.AccessibleName = "Link lifetime in minutes"; Row("Link lifetime (min)", shareMinutes, true);
-        StyleButton(pickButton); pickButton.Text = "Share a file…"; pickButton.Enabled = false; pickButton.Click += (_, _) => PickAndShare();
-        var pick = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; pick.Controls.Add(pickButton); Full(pick, true);
         Full(new Label { Text = $"MKV or MP4, up to {SharePolicy.MaxShareMegabytes} MB.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 2, 0, 4) }, true);
         feedback.AutoSize = true; feedback.ForeColor = Muted; feedback.Margin = new Padding(0, 8, 0, 0); Full(feedback);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
@@ -188,24 +186,26 @@ public sealed class SettingsForm : Form
     internal static string FormatSize(double megabytes) => megabytes >= 1024 ? $"{megabytes / 1024:0.0} GB" : megabytes >= 10 ? $"{megabytes:0} MB" : $"{megabytes:0.0} MB";
     public void UpdateStatus() { status.Text = (engine.IsRunning ? "●  " : "○  ") + engine.Status; target.Text = engine.CaptureTarget + "  /  " + engine.EncoderName; toggleButton.Text = engine.IsRunning ? "Stop buffer" : "Start buffer"; clipButton.Enabled = engine.IsRunning; UpdateShareControls(); }
     // Called by the tray: sharing lives there so the menu and this window always show the same link.
-    public void AttachSharing(IClipSharer sharer, Action toggleShare, Action copyLink, Action<string> shareFile)
+    // toggleShare: quick share or stop; editShare: open the export editor for the last clip; shareFile: editor for a file.
+    public void AttachSharing(IClipSharer sharer, Action toggleShare, Action editShare, Action copyLink, Action<string> shareFile)
     {
         this.sharer = sharer; this.shareFile = shareFile; pickButton.Enabled = true;
-        shareButton.Click += (_, _) => toggleShare(); copyLinkButton.Click += (_, _) => copyLink(); shareTicker.Start(); UpdateShareControls();
+        shareButton.Click += (_, _) => toggleShare(); editButton.Click += (_, _) => editShare(); copyLinkButton.Click += (_, _) => copyLink(); shareTicker.Start(); UpdateShareControls();
     }
-    // Drop a clip anywhere on the window to share it (same checks as "Share a file…").
+    // Drop a clip anywhere on the window to open it in the export editor (same checks as "Export a file…").
     void EnableDrop(Control control)
     {
         control.AllowDrop = true;
-        control.DragEnter += (_, e) => { var file = shareFile != null ? DroppedFile(e.Data) : null; e.Effect = file != null ? DragDropEffects.Copy : DragDropEffects.None; if (file != null) Feedback("Drop to share " + Path.GetFileName(file)); };
+        control.DragEnter += (_, e) => { var file = shareFile != null ? DroppedFile(e.Data) : null; e.Effect = file != null ? DragDropEffects.Copy : DragDropEffects.None; if (file != null) Feedback("Drop to export " + Path.GetFileName(file)); };
         control.DragDrop += (_, e) => { if (DroppedFile(e.Data) is { } file) DropFiles([file]); };
         foreach (Control child in control.Controls) EnableDrop(child);
     }
     static string? DroppedFile(IDataObject? data) => data?.GetData(DataFormats.FileDrop) is string[] { Length: 1 } files ? files[0] : null;
-    internal void DropFiles(string[] files) { if (shareFile != null && files.Length == 1) shareFile(files[0]); }
+    // The editor opens after the drop has finished, so Explorer is not kept waiting while it is open.
+    internal void DropFiles(string[] files) { if (shareFile is { } open && files.Length == 1) { var file = files[0]; if (IsHandleCreated) BeginInvoke(() => open(file)); else open(file); } }
     void PickAndShare()
     {
-        using var dialog = new OpenFileDialog { Title = "Choose a clip to share", Filter = "Videos (*.mkv;*.mp4)|*.mkv;*.mp4", InitialDirectory = Directory.Exists(original.ClipsDirectory) ? original.ClipsDirectory : "", CheckFileExists = true };
+        using var dialog = new OpenFileDialog { Title = "Choose a clip to export", Filter = "Videos (*.mkv;*.mp4)|*.mkv;*.mp4", InitialDirectory = Directory.Exists(original.ClipsDirectory) ? original.ClipsDirectory : "", CheckFileExists = true };
         if (dialog.ShowDialog(this) == DialogResult.OK) shareFile?.Invoke(dialog.FileName);
     }
     void UpdateShareControls()
@@ -218,16 +218,19 @@ public sealed class SettingsForm : Form
             int left = Math.Max(1, (int)Math.Ceiling((c.ExpiresAt - DateTimeOffset.Now).TotalMinutes));
             shareButton.Text = "Stop sharing"; shareStatus.Text = $"Shared · {left} min left (until {c.ExpiresAt:HH:mm}) · {new Uri(c.Url).Host}";
         }
-        else { shareButton.Text = $"Share last clip ({original.ShareMinutes} min)"; shareStatus.Text = ""; }
+        else { shareButton.Text = $"Quick share ({original.ShareMinutes} min)"; shareStatus.Text = ""; }
+        editButton.Visible = sharer.Current == null && !sharer.IsStarting;
         copyLinkButton.Visible = sharer.Current != null; shareStatus.Visible = shareStatus.Text.Length > 0;
     }
-    static Icon? AppIcon()
+    internal static Icon? AppIcon()
     {
         // Embedded in the app; absent when the form is compiled into tests.
         using var stream = typeof(SettingsForm).Assembly.GetManifestResourceStream("MonoClip.ico");
         return stream == null ? null : new Icon(stream);
     }
     public void Feedback(string text) { feedback.Text = text; }
+    // The tray saved a new export folder: keep it when these settings are applied later.
+    internal void KeepExportDirectory(string folder) => original = original with { ExportDirectory = folder };
     void Run(Action action) { try { action(); UpdateStatus(); } catch (Exception e) { Feedback(e.Message); } }
     void RefreshGames() { Run(() => { games.Items.Clear(); games.Items.Add("All clips"); foreach (var g in ClipLibrary.GetGames(original.ClipsDirectory)) games.Items.Add(g); games.SelectedIndex = 0; }); }
     protected override void Dispose(bool disposing) { if (disposing) { engine.StatusChanged -= EngineStatus; shareTicker.Dispose(); } base.Dispose(disposing); }
@@ -239,7 +242,7 @@ public sealed class SettingsForm : Form
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr window, string? subAppName, string? subIdList);
     static int ColorRef(Color c) => c.R | c.G << 8 | c.B << 16;
-    static void DarkTitleBar(IntPtr window)
+    internal static void DarkTitleBar(IntPtr window)
     {
         try
         {

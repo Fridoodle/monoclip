@@ -4,6 +4,75 @@ class Program {
 [STAThread] static int Main(string[] args) {
 Console.OutputEncoding = System.Text.Encoding.UTF8; Console.InputEncoding = System.Text.Encoding.UTF8;
 try {
+    if(args.Contains("--trim-file")) {
+        // Diagnostics: trim any file (start, end in seconds, audio track or -1) and describe the result.
+        int at=Array.IndexOf(args,"--trim-file");var input=args[at+1];var output=Path.Combine(Path.GetTempPath(),"MonoClip-trim-file.mp4");int track=int.Parse(args[at+4]);
+        var media=MonoClip.Windows.Share.ClipTrim.Probe(input);Console.WriteLine("INFO "+media.Duration+" tracks: "+string.Join(" | ",media.AudioTracks.Select(n=>n??"-")));
+        MonoClip.Windows.Share.ClipTrim.Create(input,output,new(TimeSpan.FromSeconds(double.Parse(args[at+2],System.Globalization.CultureInfo.InvariantCulture)),TimeSpan.FromSeconds(double.Parse(args[at+3],System.Globalization.CultureInfo.InvariantCulture)),track<0?null:track));
+        Console.WriteLine(Run("ffprobe",$"-v error -show_entries stream=codec_type,codec_name,start_time,duration -of compact \"{output}\""));return 0;
+    }
+    if(args.Contains("--player")) {
+        // The share editor's player: real MFPlay video in a window, seeking while paused, playback, audio switching.
+        var dir=Path.Combine(Path.GetTempPath(),"MonoClip-player-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+        try {
+            var mkv=Path.Combine(dir,"clip.mkv");TestClip(mkv);var media=MonoClip.Windows.Share.ClipTrim.Probe(mkv);
+            using var form=new Form{Text="MonoClip player test",ClientSize=new Size(640,360),StartPosition=FormStartPosition.CenterScreen,TopMost=true};var view=new Panel{Dock=DockStyle.Fill,BackColor=Color.Black};form.Controls.Add(view);form.Show();
+            void Pump(int ms){var w=System.Diagnostics.Stopwatch.StartNew();while(w.ElapsedMilliseconds<ms){Application.DoEvents();Thread.Sleep(15);}}
+            using var player=new MonoClip.Windows.UI.ClipPlayer(mkv,view.Handle,media.AudioStreams,media.AudioStreams[0]);
+            player.Muted=true;player.Play();for(int i=0;i<40&&!player.IsPlaying;i++)Pump(50);player.Pause();player.Muted=false;player.Position=TimeSpan.FromSeconds(3);Pump(500);
+            var paused=player.Position;if(Math.Abs(paused.TotalSeconds-3)>0.2||player.IsPlaying)throw new Exception($"seek while paused: {paused} playing={player.IsPlaying}");
+            Bitmap Shot(){var b=new Bitmap(view.Width,view.Height);using(var g=Graphics.FromImage(b))g.CopyFromScreen(view.PointToScreen(Point.Empty),Point.Empty,view.Size);return b;}
+            int Colored(Bitmap b){int n=0;for(int x=0;x<b.Width;x+=8)for(int y=0;y<b.Height;y+=8){var c=b.GetPixel(x,y);if(Math.Max(c.R,Math.Max(c.G,c.B))>60)n++;}return n;}
+            int lit=0;for(int i=0;i<20&&lit<3000;i++){player.UpdateVideo();Pump(100);using var shot=Shot();lit=Colored(shot);}if(lit<3000)throw new Exception("no video frame shown while paused ("+lit+" of 3600 samples lit)");
+            player.Play();Pump(1200);using(var shot=Shot())if(Colored(shot)<3000)throw new Exception("no video while playing");var playing=player.Position;if(!player.IsPlaying||playing.TotalSeconds<3.6)throw new Exception($"playback did not advance: {playing} playing={player.IsPlaying}");
+            player.SelectAudio(media.AudioStreams[2]);Pump(500);player.SelectAudio(null);Pump(500);if(player.Position<playing)throw new Exception("switching audio lost the position: "+player.Position);
+            player.Pause();Pump(300);if(player.IsPlaying)throw new Exception("pause failed");
+            Console.WriteLine($"PASS clip player: frame shown at {paused.TotalSeconds:0.0} s while paused, played to {playing.TotalSeconds:0.0} s, audio switched to microphone and off at {player.Position.TotalSeconds:0.0} s");return 0;
+        } finally { try{Directory.Delete(dir,true);}catch(IOException){} }
+    }
+    if(args.Contains("--trim")) {
+        // Lossless trim of a synthetic MonoClip-like MKV: 720p30 with a keyframe per second and three named AAC
+        // tracks at different pitches (mix 440 Hz, desktop 660 Hz, microphone 880 Hz) to tell them apart.
+        var dir=Path.Combine(Path.GetTempPath(),"MonoClip-trim-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+        try {
+            var mkv=Path.Combine(dir,"clip.mkv");
+            TestClip(mkv);
+            var media=MonoClip.Windows.Share.ClipTrim.Probe(mkv);
+            if(Math.Abs(media.Duration.TotalSeconds-6)>0.2)throw new Exception("probe duration "+media.Duration);
+            Console.WriteLine("INFO probe "+media.Duration.TotalSeconds.ToString("0.00")+" s, tracks: "+string.Join(" | ",media.AudioTracks.Select(n=>n??"(no name)")));
+            if(media.AudioTracks.Count!=3)throw new Exception("expected 3 audio tracks");
+            var remuxed=Path.Combine(dir,"clip.mp4");MonoClip.Windows.Share.ClipRemux.ToFastStartMp4(mkv,remuxed);
+            {var embed=Path.Combine(dir,"embed.mp4");MonoClip.Windows.Share.ClipEmbedCopy.Create(remuxed,embed,TimeSpan.FromSeconds(6),MonoClip.Core.SharePolicy.MinEmbedBytes);var tone=Path.Combine(dir,"e.raw");Run("ffmpeg",$"-v error -y -i \"{embed}\" -map 0:a:0 -ac 1 -ar 48000 -f s16le \"{tone}\"");var pcm=File.ReadAllBytes(tone);int c=0;for(int k=2;k+1<pcm.Length;k+=2)if(BitConverter.ToInt16(pcm,k-2)<0&&BitConverter.ToInt16(pcm,k)>=0)c++;double hz=c/(pcm.Length/2/48000.0);if(Math.Abs(hz-440)>40)throw new Exception($"embed copy plays {hz:0} Hz, not the playback mix");Console.WriteLine($"PASS embed copy keeps the playback mix ({hz:0} Hz)");}
+            var mp4Tracks=MonoClip.Windows.Share.ClipTrim.Probe(remuxed).AudioTracks;Console.WriteLine("INFO mp4 tracks as Windows lists them: "+string.Join(" | ",mp4Tracks.Select(n=>n??"-")));
+            // Tracks are picked by name (Windows lists MP4 audio tracks in another order than the file).
+            foreach(var (input,label,track,tone,name) in new[]{(mkv,"mkv",MonoClip.Core.ClipAudio.Choose(media.AudioTracks,false,true),880,"microphone"),(remuxed,"remuxed mp4",MonoClip.Core.ClipAudio.Choose(mp4Tracks,true,false),660,"desktop")}){
+                var output=Path.Combine(dir,"trim-"+label.Replace(' ','-')+".mp4");var timer=System.Diagnostics.Stopwatch.StartNew();
+                MonoClip.Windows.Share.ClipTrim.Create(input,output,new(TimeSpan.FromSeconds(1.5),TimeSpan.FromSeconds(4.2),track));timer.Stop();
+                var streams=Run("ffprobe",$"-v error -show_entries stream=codec_type,codec_name,start_time,duration -of csv=p=0 \"{output}\"").Trim().Replace("\r","").Split('\n');
+                if(streams.Length!=2||!streams[0].StartsWith("h264,video")||!streams[1].StartsWith("aac,audio"))throw new Exception($"{label}: unexpected streams {string.Join(" ; ",streams)}");
+                var video=streams[0].Split(',');double start=double.Parse(video[2],System.Globalization.CultureInfo.InvariantCulture),length=double.Parse(video[3],System.Globalization.CultureInfo.InvariantCulture);
+                // Starts on the keyframe at 1.0 s, ends before 4.2 s: about 3.2 s.
+                if(Math.Abs(start)>0.05||Math.Abs(length-3.2)>0.1)throw new Exception($"{label}: video start {start} length {length}");
+                var first=Run("ffprobe",$"-v error -select_streams v -read_intervals %+#1 -show_entries frame=key_frame -of csv=p=0 \"{output}\"").Trim();if(!first.StartsWith("1"))throw new Exception(label+": first frame is not a keyframe");
+                var pcm=Path.Combine(dir,"a.raw");Run("ffmpeg",$"-v error -y -i \"{output}\" -map 0:a -ac 1 -ar 48000 -f s16le \"{pcm}\"");
+                var samples=File.ReadAllBytes(pcm);int crossings=0;for(int i=2;i+1<samples.Length;i+=2){short a=BitConverter.ToInt16(samples,i-2),b=BitConverter.ToInt16(samples,i);if(a<0&&b>=0)crossings++;}
+                double pitch=crossings/(samples.Length/2/48000.0);if(Math.Abs(pitch-tone)>40)throw new Exception($"{label}: audio is {pitch:0} Hz, expected the {name} track ({tone} Hz)");
+                var bytes=File.ReadAllBytes(output);int moov=bytes.AsSpan().IndexOf("moov"u8),mdat=bytes.AsSpan().IndexOf("mdat"u8);if(moov<0||moov>mdat)throw new Exception(label+": not fast-start");
+                Console.WriteLine($"PASS lossless trim from {label}: 1.5-4.2 s -> {length:0.00} s from keyframe 1.0 s, {name} track ({pitch:0} Hz), {bytes.Length/1024} KB in {timer.ElapsedMilliseconds} ms");
+            }
+            var silent=Path.Combine(dir,"silent.mp4");MonoClip.Windows.Share.ClipTrim.Create(remuxed,silent,new(TimeSpan.Zero,TimeSpan.FromSeconds(6),null));
+            var only=Run("ffprobe",$"-v error -show_entries stream=codec_type -of csv=p=0 \"{silent}\"").Trim();if(only!="video")throw new Exception("muted copy still has audio: "+only);
+            Console.WriteLine("PASS muted copy has no audio track");
+            // A real OBS recording: its MKV describes AAC differently (no sample size), which once dropped the audio.
+            var fixtures=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","GameVerificationClips","MonoClip.GameFixture");
+            if(Directory.Exists(fixtures)&&MonoClip.Core.ClipLibrary.LatestClip(fixtures) is {} recorded){
+                var cut=Path.Combine(dir,"recorded.mp4");MonoClip.Windows.Share.ClipTrim.Create(recorded,cut,new(TimeSpan.FromSeconds(1.5),TimeSpan.FromSeconds(4),0));
+                var kinds=Run("ffprobe",$"-v error -show_entries stream=codec_type -of csv=p=0 \"{cut}\"").Trim().Replace("\r","").Replace("\n",",");if(kinds!="video,audio")throw new Exception("trimmed OBS recording has streams: "+kinds);
+                Console.WriteLine("PASS lossless trim of a real OBS recording keeps its audio");
+            } else Console.WriteLine("SKIP real OBS recording (run --game first)");
+            return 0;
+        } finally { Directory.Delete(dir,true); }
+    }
     if(args.Contains("--share-throttled")) {
         // Diagnostics: is Discord's embed limit a size or a download time? Serves one MP4 with a player page
         // through a tunnel per given rate (KB/s); a loopback proxy slows each response down to that rate.
@@ -141,18 +210,23 @@ try {
         var range=new HttpRequestMessage(HttpMethod.Get,video);range.Headers.Range=new(0,1023);var part=http.Send(range);if((int)part.StatusCode!=206)throw new Exception("range through tunnel: "+(int)part.StatusCode);
         var guess=http.GetAsync(video.Replace(video.Split('/')[3],SharePolicyToken())).GetAwaiter().GetResult();if((int)guess.StatusCode!=404)throw new Exception("wrong token served: "+(int)guess.StatusCode);
         // Second share reuses the working tunnel: same host, new path, much faster; the first link stops working.
-        var again=share.ShareAsync(source,TimeSpan.FromMinutes(5));var second=System.Diagnostics.Stopwatch.StartNew();
+        // It goes through the share editor's path: trimmed to 1.5-4.0 s (from the keyframe at 1.0 s), losslessly.
+        var again=share.ShareAsync(source,TimeSpan.FromMinutes(5),null,new(false,"Test clip",new MonoClip.Core.ClipEdit(TimeSpan.FromSeconds(1.5),TimeSpan.FromSeconds(4),0)));var second=System.Diagnostics.Stopwatch.StartNew();
         while(!again.IsCompleted&&second.Elapsed.TotalSeconds<120){Application.DoEvents();Thread.Sleep(20);}
         var next=again.GetAwaiter().GetResult();Console.WriteLine($"TIME second link ready after {second.Elapsed.TotalSeconds:0.0} s");
         if(new Uri(next.Url).Host!=new Uri(info.Url).Host||next.Url==info.Url)throw new Exception("tunnel was not reused for the second clip");
         if((int)http.GetAsync(info.Url).GetAwaiter().GetResult().StatusCode!=404)throw new Exception("first link still works after the second share");
         if((int)http.GetAsync(next.Url).GetAwaiter().GetResult().StatusCode!=200)throw new Exception("second link does not work");
+        {var page=http.GetStringAsync(next.Url).GetAwaiter().GetResult();var trimmedUrl=System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Match(page,"<video src=\"([^\"]*)\"").Groups[1].Value);
+         var trimmed=http.GetByteArrayAsync(trimmedUrl).GetAwaiter().GetResult();var file=Path.Combine(Path.GetTempPath(),"MonoClip-live-trim-"+Guid.NewGuid()+".mp4");File.WriteAllBytes(file,trimmed);
+         try{var facts=MonoClip.Core.Mp4Info.Read(file)!;if(Math.Abs(facts.Duration.TotalSeconds-3)>0.15||trimmed.Length>=expected.Length*0.8)throw new Exception($"edited share not trimmed: {facts.Duration} {trimmed.Length} bytes");
+             Console.WriteLine($"INFO edited share served {trimmed.Length/1024} KB, {facts.Duration.TotalSeconds:0.00} s of the {expected.Length/1024} KB clip");}finally{File.Delete(file);}}
         local=Directory.EnumerateFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","share"),"*.mp4").Single();info=next;
         share.Stop();Application.DoEvents();
         if(share.Current!=null||File.Exists(local))throw new Exception("stop left the share or its copy behind");
         Thread.Sleep(3000);int after;try{after=(int)http.GetAsync(info.Url).GetAwaiter().GetResult().StatusCode;}catch(HttpRequestException){after=-1;}
         if(after==200)throw new Exception("link still serves the clip after stop");
-        Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, tunnel reused for a second clip, offline after stop (status {after})");return 0;
+        Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, tunnel reused for a second (trimmed) clip, offline after stop (status {after})");return 0;
         static string SharePolicyToken()=>MonoClip.Core.SharePolicy.NewToken();
     }
     if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error")) return RegressionTests.Run(args);
@@ -202,4 +276,10 @@ try {
     Console.WriteLine(string.Join(", ", host.Encoders));
     return 0;
 } catch(Exception e) { Console.Error.WriteLine("FAIL " + e); return 1; }
-}}
+}
+// MonoClip-like test clip: 6 s of 720p30 with a keyframe per second and three named AAC tracks at different pitches
+// (mix 440 Hz, desktop 660 Hz, microphone 880 Hz) to tell them apart.
+static void TestClip(string mkv)=>Run("ffmpeg",$"-v error -f lavfi -i testsrc2=s=1280x720:r=30:d=6 -f lavfi -i sine=440:d=6 -f lavfi -i sine=660:d=6 -f lavfi -i sine=880:d=6 -map 0 -map 1 -map 2 -map 3 -c:v libx264 -g 30 -bf 0 -c:a aac -metadata:s:a:0 title=\"Playback mix\" -metadata:s:a:1 title=Desktop -metadata:s:a:2 title=Microphone \"{mkv}\"");
+// Runs a tool (ffmpeg/ffprobe) and returns its output; a failure throws with its error text.
+static string Run(string exe,string arguments){var p=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe,arguments){RedirectStandardOutput=true,RedirectStandardError=true,UseShellExecute=false})!;var errors=p.StandardError.ReadToEndAsync();var output=p.StandardOutput.ReadToEnd();p.WaitForExit();if(p.ExitCode!=0)throw new Exception(exe+" failed: "+errors.Result);return output;}
+}

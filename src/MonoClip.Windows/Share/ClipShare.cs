@@ -43,9 +43,11 @@ public sealed class ClipShare : IClipSharer
             local.Publish(target, SharePolicy.RequestPath(token, clipPath), (int)duration.TotalSeconds, ready: false);
             progress?.Report(tunnel != null ? "Preparing clip…" : "Preparing clip · requesting link…");
             // Cloudflare needs about 6 s to assign a new link: prepare the MP4 in the meantime, not before.
-            remux = Task.Run(() => ClipRemux.ToFastStartMp4(clipPath, target), cancel.Token);
+            // An edited clip is trimmed straight from the original (lossless, one audio track) instead of remuxed.
+            options ??= new(); var edit = options.Edit;
+            remux = Task.Run(() => { if (edit != null) ClipTrim.Create(clipPath, target, edit, cancel.Token); else ClipRemux.ToFastStartMp4(clipPath, target); }, cancel.Token);
             // Preview image and video facts for the page, prepared while Cloudflare assigns the link.
-            options ??= new(); var title = string.IsNullOrWhiteSpace(options.Title) ? "MonoClip clip" : options.Title;
+            var title = string.IsNullOrWhiteSpace(options.Title) ? "MonoClip clip" : options.Title;
             var budget = SharePolicy.EmbedBudget(upload);
             preview = options.DirectLink ? null : remux.ContinueWith(_ => PreparePreviewAsync(target, title, budget, cancel.Token), cancel.Token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default).Unwrap();
             CloudflaredTunnel t;

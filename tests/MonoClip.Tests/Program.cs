@@ -67,7 +67,7 @@ Test("settings expose required safe defaults", () =>
         ["Width"] = 1920, ["Height"] = 1080, ["Fps"] = 60, ["ClipSeconds"] = 30,
         ["Hotkey"] = "Ctrl+Shift+F9", ["Microphone"] = true, ["DesktopAudio"] = true,
         ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = true,
-        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["CopyShareLink"] = true, ["SortByApp"] = true, ["DirectLink"] = false,
+        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["CopyShareLink"] = true, ["SortByApp"] = true, ["DirectLink"] = false, ["ExportDirectory"] = "",
         ["MicrophoneDevice"] = "default", ["DesktopDevice"] = "default",
         ["ClipsDirectory"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip")
     };
@@ -376,6 +376,21 @@ Test("GPU encoder choice prefers AMD, then NVIDIA, then Intel, never the CPU",()
     Equal("obs_nvenc_h264_tex",CapturePolicy.PickEncoder(["obs_qsv11_v2","obs_nvenc_h264_tex"])!.Value.Id);
     Equal("Intel Quick Sync · H.264 GPU",CapturePolicy.PickEncoder(["ffmpeg_aac","obs_qsv11_soft_v2","obs_qsv11_v2"])!.Value.Name);
     Equal<(string,string)?>(null,CapturePolicy.PickEncoder(["ffmpeg_aac","obs_x264","ffmpeg_svt_av1"]));
+});
+Test("audio for a shared clip is chosen by track name, in any order",()=>{
+    string?[] clip=["Playback mix","Desktop","Microphone"],mp4=["Microphone","Desktop","Playback mix"];
+    True(ClipAudio.CanSplit(clip),"split");Equal<int?>(0,ClipAudio.Choose(clip,true,true));Equal<int?>(1,ClipAudio.Choose(clip,true,false));Equal<int?>(2,ClipAudio.Choose(clip,false,true));Equal<int?>(null,ClipAudio.Choose(clip,false,false));
+    Equal<int?>(2,ClipAudio.Choose(mp4,true,true));Equal<int?>(1,ClipAudio.Choose(mp4,true,false));Equal<int?>(0,ClipAudio.Choose(mp4,false,true));Equal<int?>(2,ClipAudio.DefaultTrack(mp4));
+    string?[] desktopOnly=["Desktop","Playback mix"],unnamed=[null,null];
+    True(!ClipAudio.CanSplit(desktopOnly),"no split without a microphone track");Equal("Desktop audio",ClipAudio.SingleLabel(desktopOnly));Equal<int?>(1,ClipAudio.Choose(desktopOnly,true,true));Equal<int?>(null,ClipAudio.Choose(desktopOnly,false,false));
+    Equal("Microphone",ClipAudio.SingleLabel(["Playback mix","Microphone"]));Equal("Audio",ClipAudio.SingleLabel(unnamed));Equal<int?>(0,ClipAudio.Choose(unnamed,true,true));Equal<int?>(null,ClipAudio.Choose([],true,true));
+});
+Test("clip edits know when they change the clip and estimate the shared size",()=>{
+    var length=TimeSpan.FromSeconds(90);
+    True(!new ClipEdit(TimeSpan.Zero,length,0).ChangesClip(length,0),"whole clip with the mix changes nothing");
+    True(new ClipEdit(TimeSpan.FromSeconds(5),length,0).ChangesClip(length,0),"trimmed start");True(new ClipEdit(TimeSpan.Zero,TimeSpan.FromSeconds(60),0).ChangesClip(length,0),"trimmed end");
+    True(new ClipEdit(TimeSpan.Zero,length,2).ChangesClip(length,0),"other track");True(new ClipEdit(TimeSpan.Zero,length,null).ChangesClip(length,0),"muted");
+    Equal(30_000_000L,new ClipEdit(TimeSpan.FromSeconds(30),TimeSpan.FromSeconds(60)).EstimateBytes(90_000_000,length));
 });
 // NEXT_TEST
 Console.WriteLine($"RESULT {count - failures}/{count} passed");

@@ -12,6 +12,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--dpi")) return DpiProbe.Run(args[Array.IndexOf(args, "--dpi") + 1]);
+        if (args.Contains("--editor")) return EditorProbe(args[Array.IndexOf(args, "--editor") + 1], args.Contains("--interactive"));
         Test("Hotkey parses modifiers and F8 without repeat", () =>
         {
             var type = Assembly.GetExecutingAssembly().GetType("MonoClip.Windows.UI.Hotkey") ?? throw new Exception("Hotkey implementation missing");
@@ -169,7 +170,7 @@ internal static class Program
             using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{Quality=MonoClip.Core.QualityPreset.Performance},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
             Control F(string name)=>(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
             foreach(var name in new[]{"duration","hotkey","autostart","directory"})if(!F(name).Visible)throw new Exception(name+" missing in simple mode");
-            foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes","autoShare","pickButton"})if(F(name).Visible)throw new Exception(name+" visible in simple mode");
+            foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes","autoShare"})if(F(name).Visible)throw new Exception(name+" visible in simple mode");if(!F("pickButton").Visible)throw new Exception("Export a file hidden in simple mode");
             var budget=(Label)F("budget");if(!budget.Visible||!budget.Text.Contains("MB"))throw new Exception("estimated file size missing: "+budget.Text);
             ((CheckBox)F("advanced")).Checked=true;Application.DoEvents();
             foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes","autoShare","pickButton"})if(!F(name).Visible)throw new Exception(name+" hidden in advanced mode");
@@ -190,12 +191,13 @@ internal static class Program
                 using(var plain=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F7",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"a.json"))){var t=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plain)!;if(t.ContextMenuStrip!.Items.Cast<ToolStripItem>().Any(i=>i.Text!.Contains("Share")&&i.Available))throw new Exception("share item shown without a sharer");}
                 using var ctx=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F8",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"settings.json"),false,_=>{},sharer){CopyText=text=>copied=text};
                 var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var items=tray.ContextMenuStrip!.Items.Cast<ToolStripItem>().ToList();
-                var share=(ToolStripMenuItem)items.Single(i=>i.Text!.StartsWith("Share last clip"));Equal("Share last clip (15 min)",share.Text);if(items.IndexOf(share)<1||items[^1].Text!="Exit")throw new Exception("share item misplaced");
+                var share=(ToolStripMenuItem)items.Single(i=>i.Text!.StartsWith("Quick share last clip"));Equal("Quick share last clip (15 min)",share.Text);
+                var edit=(ToolStripMenuItem)items.Single(i=>i.Text=="Export last clip…");if(!edit.Available||items.IndexOf(edit)!=items.IndexOf(share)+1)throw new Exception("editor item missing or misplaced");if(items.IndexOf(share)<1||items[^1].Text!="Exit")throw new Exception("share item misplaced");
                 share.PerformClick();Application.DoEvents();
                 Equal(clip,sharer.SharedClip);Equal(TimeSpan.FromMinutes(15),sharer.Duration);Equal("Game clip",sharer.Options!.Title);Equal(false,sharer.Options.DirectLink);
-                Equal("MonoClip clip",ctx.ClipTitle(Path.Combine(dir,"flat.mkv")));Equal("MonoClip clip",ctx.ClipTitle(@"C:\Elsewhere\Game\x.mkv"));Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Stop sharing (15 min left)"))throw new Exception("active share not shown: "+share.Text);
+                Equal("MonoClip clip",ctx.ClipTitle(Path.Combine(dir,"flat.mkv")));Equal("MonoClip clip",ctx.ClipTitle(@"C:\Elsewhere\Game\x.mkv"));Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Stop sharing (15 min left)"))throw new Exception("active share not shown: "+share.Text);if(edit.Available)throw new Exception("editor item shown while a link is online");
                 var again=(ToolStripMenuItem)items.Single(i=>i.Text=="Copy link");copied=null;again.PerformClick();Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);
-                share.PerformClick();Application.DoEvents();Equal<object?>(null,sharer.Current);if(!share.Text!.StartsWith("Share last clip"))throw new Exception("stopped share still shown");
+                share.PerformClick();Application.DoEvents();Equal<object?>(null,sharer.Current);if(!share.Text!.StartsWith("Quick share last clip")||!edit.Available)throw new Exception("stopped share still shown");
             }finally{Directory.Delete(dir,true);}
         });
         Test("Tray symbol is a black tile with a filled or hollow white dot",()=>{
@@ -225,10 +227,12 @@ internal static class Program
             var sharer=new FakeSharer();int toggles=0,copies=0;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{ShareMinutes=20},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
             Control F(string name)=>(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
             if(F("shareButton").Visible)throw new Exception("share button shown without sharing support");
-            string? picked=null;form.AttachSharing(sharer,()=>toggles++,()=>copies++,path=>picked=path);
-            if(!F("pickButton").Enabled)throw new Exception("pick button not enabled with sharing support");var share=(Button)F("shareButton");var copy=(Button)F("copyLinkButton");
-            if(!share.Visible||share.Text!="Share last clip (20 min)"||copy.Visible)throw new Exception("idle share controls wrong: "+share.Text);
-            share.PerformClick();Equal(1,toggles);
+            string? picked=null;int edits=0;form.AttachSharing(sharer,()=>toggles++,()=>edits++,()=>copies++,path=>picked=path);var editShare=(Button)F("editButton");
+            if(!F("pickButton").Enabled)throw new Exception("pick button not enabled with sharing support");
+            // "Export a file…" sits next to "Open folder" and is part of the simple settings.
+            var pick=F("pickButton");if(!pick.Visible||pick.Parent==null||pick.Parent.Controls.IndexOf(pick)!=1||pick.Parent.Controls[0].Text!="Open folder")throw new Exception("export button not next to Open folder in simple mode");var share=(Button)F("shareButton");var copy=(Button)F("copyLinkButton");
+            if(!share.Visible||share.Text!="Quick share (20 min)"||copy.Visible||!editShare.Visible||editShare.Text!="Export…")throw new Exception("idle share controls wrong: "+share.Text);
+            share.PerformClick();Equal(1,toggles);editShare.PerformClick();Equal(1,edits);
             sharer.ShareAsync("clip.mkv",TimeSpan.FromMinutes(20));form.UpdateStatus();
             var status=(Label)F("shareStatus");if(!copy.Visible||share.Text!="Stop sharing"||!status.Visible||!status.Text.Contains("20 min left")||!status.Text.Contains("fake-host.trycloudflare.com"))throw new Exception("active share not shown: "+status.Text);
             copy.PerformClick();Equal(1,copies);
@@ -264,7 +268,7 @@ internal static class Program
         Test("Dropping a single clip on the window shares it",()=>{
             using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});
             var shared=new List<string>();form.DropFiles(["C:\\clip.mkv"]);Equal(0,shared.Count);
-            form.AttachSharing(new FakeSharer(),()=>{},()=>{},shared.Add);
+            form.AttachSharing(new FakeSharer(),()=>{},()=>{},()=>{},shared.Add);
             form.DropFiles(["C:\\a.mkv","C:\\b.mkv"]);Equal(0,shared.Count);
             form.DropFiles(["C:\\clip.mkv"]);Equal("C:\\clip.mkv",shared.Single());
             if(!form.AllowDrop)throw new Exception("window does not accept drops");
@@ -278,9 +282,49 @@ internal static class Program
                 Equal(0,played.Count);ctx.AnnounceStart();Equal("Launch",string.Join(",",played));played.Clear();
                 var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var toggle=(ToolStripMenuItem)tray.ContextMenuStrip!.Items[0];
                 toggle.PerformClick();toggle.PerformClick();Equal("BufferOff,BufferOn",string.Join(",",played));played.Clear();
-                File.WriteAllBytes(Path.Combine(dir,"c.mkv"),[0x1A,0x45,0xDF,0xA3,0,0,0,0,0,0,0,0]);var share=(ToolStripMenuItem)tray.ContextMenuStrip.Items.Cast<ToolStripItem>().Single(i=>i.Text!.StartsWith("Share last clip"));
+                File.WriteAllBytes(Path.Combine(dir,"c.mkv"),[0x1A,0x45,0xDF,0xA3,0,0,0,0,0,0,0,0]);var share=(ToolStripMenuItem)tray.ContextMenuStrip.Items.Cast<ToolStripItem>().Single(i=>i.Text!.StartsWith("Quick share last clip"));
                 share.PerformClick();Application.DoEvents();played.Clear();share.PerformClick();Equal("ShareStopped",string.Join(",",played));
             }finally{Directory.Delete(dir,true);}
+        });
+        Test("Export… opens the editor, then shares or saves the edit; cancelling does nothing",()=>{
+            var dir=Path.Combine(Path.GetTempPath(),"MonoClip-edit-"+Guid.NewGuid());Directory.CreateDirectory(dir);var clip=Path.Combine(dir,"c.mkv");File.WriteAllBytes(clip,[0x1A,0x45,0xDF,0xA3,0,0,0,0,0,0,0,0]);
+            try{var sharer=new FakeSharer();string? opened=null;MonoClip.Windows.UI.TrayAppContext.ExportChoice? answer=null;var played=new List<MonoClip.Windows.UI.Sound>();
+                using var ctx=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F2",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"s.json"),false,played.Add,sharer){CopyText=_=>{},EditClip=c=>{opened=c;return answer;}};
+                var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var edit=(ToolStripMenuItem)tray.ContextMenuStrip!.Items.Cast<ToolStripItem>().Single(i=>i.Text=="Export last clip…");
+                edit.PerformClick();Application.DoEvents();Equal(clip,opened);Equal<string?>(null,sharer.SharedClip);Equal(0,played.Count);
+                var trim=new MonoClip.Core.ClipEdit(TimeSpan.FromSeconds(2),TimeSpan.FromSeconds(7),2);answer=new(trim,null);edit.PerformClick();Application.DoEvents();Equal(clip,sharer.SharedClip);Equal(trim,sharer.Options!.Edit);
+                // Save goes to the file instead of sharing (this fake clip cannot be trimmed, so it reports an error).
+                sharer.Stop();sharer.SharedClip=null;played.Clear();answer=new(trim,Path.Combine(dir,"out.mp4"));edit.PerformClick();
+                var wait=System.Diagnostics.Stopwatch.StartNew();while(played.Count==0&&wait.ElapsedMilliseconds<5000){Application.DoEvents();Thread.Sleep(10);}
+                Equal<string?>(null,sharer.SharedClip);Equal("Error",string.Join(",",played));
+                // Dropped and picked files go through the editor too, after the usual checks.
+                answer=new(trim,null);opened=null;ctx.Export(Path.Combine(dir,"notes.txt"),chosen:true);Equal<string?>(null,opened);
+                ctx.Export(clip,chosen:true);Equal(clip,opened);Equal(clip,sharer.SharedClip);
+            }finally{Directory.Delete(dir,true);}
+        });
+        Test("Share editor starts with the whole clip and picks audio by track name",()=>{
+            var media=new MonoClip.Windows.Share.ClipTrim.Media(TimeSpan.FromSeconds(10),["Microphone","Desktop","Playback mix"],[3u,2u,1u]);
+            using var form=new MonoClip.Windows.UI.ShareEditorForm("c.mkv","Game clip",media,100L*1024*1024,Path.GetTempPath(),preview:false);form.Show();Application.DoEvents();
+            if(form.Text!="Export · Game clip"||((Button)typeof(MonoClip.Windows.UI.ShareEditorForm).GetField("save",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!).Text!="Save…")throw new Exception("export window without a save button");
+            object F(string name)=>typeof(MonoClip.Windows.UI.ShareEditorForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            var bar=(MonoClip.Windows.UI.TrimBar)F("bar");var desktop=(CheckBox)F("desktop");var mic=(CheckBox)F("microphone");var times=(Label)F("times");
+            Equal(new MonoClip.Core.ClipEdit(TimeSpan.Zero,TimeSpan.FromSeconds(10),2),form.CurrentEdit);Equal("Game / desktop audio",desktop.Text);if(mic.Parent==null)throw new Exception("microphone switch missing");
+            bar.Start=TimeSpan.FromSeconds(2);bar.End=TimeSpan.FromSeconds(6);mic.Checked=false;Equal(new MonoClip.Core.ClipEdit(TimeSpan.FromSeconds(2),TimeSpan.FromSeconds(6),1),form.CurrentEdit);
+            if(!times.Text.Contains("0:02.0 – 0:06.0")||!times.Text.Contains("4.0 s")&&!times.Text.Contains("4,0 s")||!times.Text.Contains("40 MB"))throw new Exception("times label: "+times.Text);
+            mic.Checked=true;desktop.Checked=false;Equal<int?>(0,form.CurrentEdit.AudioTrack);mic.Checked=false;Equal<int?>(null,form.CurrentEdit.AudioTrack);
+            ((Button)F("share")).PerformClick();Equal(DialogResult.OK,form.DialogResult);Equal(form.CurrentEdit,form.Edit);Equal<string?>(null,form.SavePath);
+            using var single=new MonoClip.Windows.UI.ShareEditorForm("c.mp4","Clip",new(TimeSpan.FromSeconds(5),["Desktop","Playback mix"],[2u,1u]),1000,Path.GetTempPath(),preview:false);
+            object G(string name)=>typeof(MonoClip.Windows.UI.ShareEditorForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(single)!;
+            Equal("Desktop audio",((CheckBox)G("desktop")).Text);if(((CheckBox)G("microphone")).Parent!=null)throw new Exception("split switch for a clip without separate tracks");
+            Equal<int?>(1,single.CurrentEdit.AudioTrack);((CheckBox)G("desktop")).Checked=false;Equal<int?>(null,single.CurrentEdit.AudioTrack);
+        });
+        Test("Trim bar keeps at least a second and moves the playhead with the keyboard",()=>{
+            using var bar=new MonoClip.Windows.UI.TrimBar{Width=400,Height=44};bar.Duration=TimeSpan.FromSeconds(10);
+            bar.Start=TimeSpan.FromSeconds(9.8);Equal(TimeSpan.FromSeconds(9),bar.Start);bar.End=TimeSpan.FromSeconds(9.5);Equal(TimeSpan.FromSeconds(10),bar.End);
+            bar.Start=TimeSpan.FromSeconds(2);bar.End=TimeSpan.FromSeconds(2.5);Equal(TimeSpan.FromSeconds(3),bar.End);
+            var seeks=new List<TimeSpan>();bar.Seek+=seeks.Add;var key=typeof(Control).GetMethod("OnKeyDown",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            key.Invoke(bar,[new KeyEventArgs(Keys.Home)]);key.Invoke(bar,[new KeyEventArgs(Keys.Right)]);key.Invoke(bar,[new KeyEventArgs(Keys.Right|Keys.Shift)]);key.Invoke(bar,[new KeyEventArgs(Keys.End)]);
+            Equal("2,2.1,3.1,3",string.Join(",",seeks.Select(s=>s.TotalSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture))));
         });
         Test("Sort clips by application is an advanced setting, on by default",()=>{
             using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});
@@ -314,7 +358,7 @@ internal static class Program
             var dir=args[Array.IndexOf(args,"--render")+1];Directory.CreateDirectory(dir);
             foreach(var advanced in new[]{false,true}){
                 var sharer=new FakeSharer();using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{AdvancedMode=advanced},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();
-                form.AttachSharing(sharer,()=>{},()=>{},_=>{});if(advanced){sharer.ShareAsync("c.mkv",TimeSpan.FromMinutes(15));form.UpdateStatus();}
+                form.AttachSharing(sharer,()=>{},()=>{},()=>{},_=>{});if(advanced){sharer.ShareAsync("c.mkv",TimeSpan.FromMinutes(15));form.UpdateStatus();}
                 form.ClientSize=new Size(form.ClientSize.Width,advanced?1500:820);Application.DoEvents();
                 using var image=new Bitmap(form.Width,form.Height);form.DrawToBitmap(image,new Rectangle(Point.Empty,form.Size));image.Save(Path.Combine(dir,advanced?"settings-advanced.png":"settings-simple.png"));
                 if(advanced){var table=(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField("table",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;using var all=new Bitmap(table.Width,table.Height);table.DrawToBitmap(all,new Rectangle(Point.Empty,table.Size));all.Save(Path.Combine(dir,"settings-advanced-full.png"));}
@@ -332,6 +376,17 @@ internal static class Program
         });
         Console.WriteLine($"UI tests: {failures} failure(s)");
         return failures == 0 ? 0 : 1;
+    }
+    // Opt-in: opens the real share editor for a clip with a live preview, saves a screenshot after it has
+    // loaded and prints the edit (--interactive keeps it open until closed).
+    static int EditorProbe(string clip, bool interactive)
+    {
+        var media = MonoClip.Windows.Share.ClipTrim.Probe(clip);
+        using var form = new MonoClip.Windows.UI.ShareEditorForm(clip, "Test clip", media, new FileInfo(clip).Length, Path.GetTempPath());
+        if (interactive) { form.ShowDialog(); Console.WriteLine("EDIT " + form.Edit + " SAVE " + form.SavePath); return 0; }
+        form.Show(); var wait = System.Diagnostics.Stopwatch.StartNew(); while (wait.ElapsedMilliseconds < 2500) { Application.DoEvents(); Thread.Sleep(15); }
+        using var shot = new Bitmap(form.Width, form.Height); using (var g = Graphics.FromImage(shot)) g.CopyFromScreen(form.Location, Point.Empty, form.Size);
+        var file = Path.Combine(Path.GetTempPath(), "monoclip-editor.png"); shot.Save(file); Console.WriteLine("SHOT " + file + " EDIT " + form.CurrentEdit); form.Close(); return 0;
     }
     private static void Test(string name, Action test)
     {
