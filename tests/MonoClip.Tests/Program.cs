@@ -371,6 +371,12 @@ Test("share server serves the embed copy with ranges, only while attached",()=>{
         server.AttachPage(new("/tok",[1],"/tok/preview.jpg",[2]));Equal(404,(int)http.GetAsync("/tok/embed.mp4").Result.StatusCode);
     }finally{Directory.Delete(dir,true);}
 });
+Test("GPU encoder choice prefers AMD, then NVIDIA, then Intel, never the CPU",()=>{
+    Equal("h264_texture_amf",CapturePolicy.PickEncoder(["obs_qsv11_v2","obs_nvenc_h264_tex","h264_texture_amf"])!.Value.Id);
+    Equal("obs_nvenc_h264_tex",CapturePolicy.PickEncoder(["obs_qsv11_v2","obs_nvenc_h264_tex"])!.Value.Id);
+    Equal("Intel Quick Sync · H.264 GPU",CapturePolicy.PickEncoder(["ffmpeg_aac","obs_qsv11_soft_v2","obs_qsv11_v2"])!.Value.Name);
+    Equal<(string,string)?>(null,CapturePolicy.PickEncoder(["ffmpeg_aac","obs_x264","ffmpeg_svt_av1"]));
+});
 // NEXT_TEST
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;

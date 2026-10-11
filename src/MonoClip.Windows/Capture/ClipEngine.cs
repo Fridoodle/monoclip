@@ -53,11 +53,11 @@ public sealed class ClipEngine : IClipEngine
             // Track 1 is a playback mix; track 2 desktop-only; track 3 microphone-only.
             if (s.DesktopAudio) AddAudio("wasapi_output_capture", "Desktop audio", s.DesktopDevice, 1u | 2u, 1);
             if (s.Microphone) AddAudio("wasapi_input_capture", "Microphone", s.MicrophoneDevice, 1u | 4u, 2);
-            using (var data = new ObsData().Set("rate_control", "CBR").Set("bitrate", CapturePolicy.BitrateKbps(s)).Set("keyint_sec", 1L).Set("preset", "speed").Set("profile", "high").Set("bf", 0L))
+            using (var data = new ObsData().Set("rate_control", "CBR").Set("bitrate", CapturePolicy.BitrateKbps(s)).Set("keyint_sec", 1L).Set("preset", "speed").Set("profile", "high").Set("bf", 0L).Set("bframes", 0L).Set("target_usage", "TU5"))
             {
-                string? id = host.Encoders.Contains("h264_texture_amf") ? "h264_texture_amf" : host.Encoders.FirstOrDefault(x => x == "obs_nvenc_h264_tex");
-                if (id == null) throw new NotSupportedException("No supported GPU H.264 encoder found (no CPU fallback).");
-                EncoderName = id == "h264_texture_amf" ? "AMD AMF · H.264 GPU" : "NVIDIA NVENC · H.264 GPU";
+                // Intel (QSV) reads "bframes" and "target_usage" (TU5: fast), AMD and NVIDIA "bf" and "preset".
+                var (id, name) = CapturePolicy.PickEncoder(host.Encoders) ?? throw new NotSupportedException("No supported GPU H.264 encoder found (AMD, NVIDIA or Intel; no CPU fallback).");
+                EncoderName = name;
                 videoEncoder = Require(Obs.obs_video_encoder_create(id, "MonoClip GPU video", data.Handle, IntPtr.Zero), "GPU encoder"); Obs.obs_encoder_set_video(videoEncoder, Obs.obs_get_video());
             }
             var staging = Path.Combine(s.ClipsDirectory, ".pending"); Directory.CreateDirectory(staging);
