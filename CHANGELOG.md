@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- **Quick share** (as before) and new **Export…**: a small editor to watch the clip, drag the start and end of the timeline to trim it and switch off the game/desktop audio or the microphone, then **Share** it or **Save…** it as an MP4 wherever you like (the last folder is remembered). Dropped files and **Export a file…** open the editor too; automatic sharing stays quick.
+- Trimming is lossless and takes a fraction of a second: nothing is re-encoded, so the shared clip can start up to a second before the start mark (at the previous keyframe).
+- Fixed: the copy Discord plays (since 1.0.3) used the desktop-only audio track, so the microphone was missing in Discord. It now uses the playback mix like the original.
+
 ## 1.0.4
 
 - Intel graphics (Quick Sync) are supported for recording. PCs with an AMD or NVIDIA card keep using it. Untested on Intel hardware so far.

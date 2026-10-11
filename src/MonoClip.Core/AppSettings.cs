@@ -29,6 +29,9 @@ public sealed record AppSettings
     public bool SortByApp { get; set; } = true;
     // Share the MP4 itself instead of a player page with preview (advanced, off by default).
     public bool DirectLink { get; set; }
+    // Folder the export editor last saved to; empty means the Videos folder.
+    public string ExportDirectory { get; set; } = "";
+    public string ExportFolder() => !string.IsNullOrWhiteSpace(ExportDirectory) && Directory.Exists(ExportDirectory) ? ExportDirectory : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
     public string MicrophoneDevice { get; set; } = "default";
     public string DesktopDevice { get; set; } = "default";
     public void Validate()

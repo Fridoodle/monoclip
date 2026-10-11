@@ -2,7 +2,8 @@ namespace MonoClip.Windows;
 
 public sealed record ShareInfo(string Url, DateTimeOffset ExpiresAt, string Clip);
 // DirectLink: hand out the MP4 itself instead of the player page. Title: shown on the page and in the preview.
-public sealed record ShareOptions(bool DirectLink = false, string? Title = null);
+// Edit: trim and audio choice from the share editor; null shares the clip as it is.
+public sealed record ShareOptions(bool DirectLink = false, string? Title = null, MonoClip.Core.ClipEdit? Edit = null);
 public interface IClipSharer : IDisposable
 {
     ShareInfo? Current { get; }
