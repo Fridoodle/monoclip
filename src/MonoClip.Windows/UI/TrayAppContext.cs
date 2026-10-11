@@ -85,7 +85,10 @@ public sealed class TrayAppContext : ApplicationContext
         spinner = Enumerable.Range(0, SpinnerFrames).Select(f => MakeIcon(TrayIconKind.Busy, size, false, f)).ToArray();
     }
     public void ShowSettings() { if (form == null || form.IsDisposed) { form = new(settings, engine, SaveSettings, Toggle, engine.SaveClip); if (sharer != null) form.AttachSharing(sharer, ToggleShare, () => Run(CopyShareLink), path => _ = ShareClip(path, chosen: true)); } form.Show(); form.WindowState = FormWindowState.Normal; }
-    void Toggle() { if (engine.IsRunning) engine.Stop(); else engine.Start(settings); UpdateTray(); }
+    // Manual start/stop (tray, settings window). Starting on launch plays the launch sound instead.
+    void Toggle() { if (engine.IsRunning) { engine.Stop(); Cue(Sound.BufferOff); } else { engine.Start(settings); Cue(Sound.BufferOn); } UpdateTray(); }
+    // Played on the very first start of a new install: the app only appears in the tray, which new users miss.
+    public void AnnounceStart() => Cue(Sound.Launch);
     void SaveSettings(AppSettings next)
     {
         next.Validate(); var parsed = Hotkey.Parse(next.Hotkey); var old = settings with { }; bool applied = false, autostartChanged = false;
@@ -108,7 +111,7 @@ public sealed class TrayAppContext : ApplicationContext
     void ToggleShare()
     {
         if (sharer == null) return;
-        if (sharer.Current != null || sharer.IsStarting) { sharer.Stop(); return; }
+        if (sharer.Current != null || sharer.IsStarting) { sharer.Stop(); Cue(Sound.ShareStopped); return; }
         var clip = lastClip != null && File.Exists(lastClip) ? lastClip : ClipLibrary.LatestClip(settings.ClipsDirectory);
         if (clip == null) { Fail("No clip saved yet."); return; }
         _ = ShareClip(clip, chosen: false);

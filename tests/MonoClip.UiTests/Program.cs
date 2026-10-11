@@ -11,6 +11,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--dpi")) return DpiProbe.Run(args[Array.IndexOf(args, "--dpi") + 1]);
         Test("Hotkey parses modifiers and F8 without repeat", () =>
         {
             var type = Assembly.GetExecutingAssembly().GetType("MonoClip.Windows.UI.Hotkey") ?? throw new Exception("Hotkey implementation missing");
@@ -118,7 +119,8 @@ internal static class Program
                 if(samples.Take(3).Concat(samples.TakeLast(3)).Any(x=>Math.Abs((int)x)>200))throw new Exception(sound+" edges click");
                 waves[sound]=samples;
             }
-            if(waves.Values.Select(w=>w.Length).Distinct().Count()<4)throw new Exception("cues are not distinguishable");
+            if(waves.Values.Select(w=>Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Runtime.InteropServices.MemoryMarshal.AsBytes(w.AsSpan())))).Distinct().Count()!=waves.Count)throw new Exception("two cues are identical");
+            if(waves.Count!=8)throw new Exception("expected 8 cues, found "+waves.Count);
             if(waves[MonoClip.Windows.UI.Sound.Link].Length<=waves[MonoClip.Windows.UI.Sound.Clip].Length)throw new Exception("link cue should ring out longer than the clip cue");
         });
         Test("Beep checkbox is configurable in saved UI values",()=>{
@@ -262,6 +264,22 @@ internal static class Program
             if(!form.AllowDrop)throw new Exception("window does not accept drops");
             var table=(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField("table",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
             if(!table.Controls.Cast<Control>().All(c=>c.AllowDrop))throw new Exception("some controls block drops");
+        });
+        Test("Manual buffer start/stop, stopping a share and launch have their own sounds",()=>{
+            var dir=Path.Combine(Path.GetTempPath(),"MonoClip-cues-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+            try{var played=new List<MonoClip.Windows.UI.Sound>();var sharer=new FakeSharer();var engine=new FakeEngine();
+                using var ctx=new MonoClip.Windows.UI.TrayAppContext(engine,new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F3",StartBufferOnLaunch=true,ClipsDirectory=dir},Path.Combine(dir,"s.json"),false,played.Add,sharer){CopyText=_=>{}};
+                Equal(0,played.Count);ctx.AnnounceStart();Equal("Launch",string.Join(",",played));played.Clear();
+                var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var toggle=(ToolStripMenuItem)tray.ContextMenuStrip!.Items[0];
+                toggle.PerformClick();toggle.PerformClick();Equal("BufferOff,BufferOn",string.Join(",",played));played.Clear();
+                File.WriteAllBytes(Path.Combine(dir,"c.mkv"),[0x1A,0x45,0xDF,0xA3,0,0,0,0,0,0,0,0]);var share=(ToolStripMenuItem)tray.ContextMenuStrip.Items.Cast<ToolStripItem>().Single(i=>i.Text!.StartsWith("Share last clip"));
+                share.PerformClick();Application.DoEvents();played.Clear();share.PerformClick();Equal("ShareStopped",string.Join(",",played));
+            }finally{Directory.Delete(dir,true);}
+        });
+        Test("Sort clips by application is an advanced setting, on by default",()=>{
+            using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});
+            var box=(CheckBox)typeof(MonoClip.Windows.UI.SettingsForm).GetField("sortByApp",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            Equal(true,form.ReadSettings().SortByApp);box.Checked=false;Equal(false,form.ReadSettings().SortByApp);form.Show();Application.DoEvents();if(box.Visible)throw new Exception("visible in simple mode");form.Close();
         });
         Test("Advanced mode toggle persists immediately",()=>{
             MonoClip.Core.AppSettings? saved=null;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),s=>saved=s,()=>{},()=>{});

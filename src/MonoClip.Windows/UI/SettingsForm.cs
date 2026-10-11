@@ -9,7 +9,7 @@ public sealed class SettingsForm : Form
     const int LogicalWidth = 660, LogicalHeight = 900, LogicalMinWidth = 380, LogicalMinHeight = 320, NarrowContent = 430, WidePadding = 28, NarrowPadding = 16;
     AppSettings original; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
     readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox(); readonly NumericUpDown duration = new MonoNumeric(); readonly TextBox hotkey = new(), directory = new();
-    readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new(), autoShare = new();
+    readonly CheckBox mic = new(), desktop = new(), minimized = new(), autostart = new(), bufferOnLaunch = new(), clipBeep = new(), advanced = new(), autoShare = new(), sortByApp = new();
     readonly MonoSlider quality = new("Performance", "Balanced", "Quality"); readonly List<Control> advancedOnly = [];
     readonly NumericUpDown shareMinutes = new MonoNumeric(); readonly Button shareButton = new MonoButton(), copyLinkButton = new MonoButton(); readonly Label shareStatus = new(); readonly Button pickButton = new MonoButton(); Action<string>? shareFile;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }; IClipSharer? sharer;
@@ -55,6 +55,7 @@ public sealed class SettingsForm : Form
         Section("CLIPS"); StyleText(directory); directory.Text = settings.ClipsDirectory;
         var pathPanel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill }; pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); directory.Dock = DockStyle.Fill; directory.Margin = new Padding(0, 3, 6, 3); pathPanel.Controls.Add(directory, 0, 0);
         var browse = Button("…", () => { using var dialog = new FolderBrowserDialog { InitialDirectory = directory.Text, Description = "Clip folder" }; if (dialog.ShowDialog(this) == DialogResult.OK) directory.Text = dialog.SelectedPath; }); browse.MinimumSize = new Size(Px(42), Px(30)); browse.Margin = Padding.Empty; pathPanel.Controls.Add(browse, 1, 0); Row("Folder", pathPanel);
+        Check(sortByApp, "Sort clips by application", settings.SortByApp, true);
         StyleCombo(games); games.Items.Add("All clips"); games.SelectedIndex = 0; Row("Game", games, true);
         var libraryActions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true }; libraryActions.Controls.Add(Button("Open folder", () => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory)))); var refresh = Button("Refresh", RefreshGames); libraryActions.Controls.Add(refresh); advancedOnly.Add(refresh); Full(libraryActions);
         Section("SHARING", true);
@@ -65,7 +66,9 @@ public sealed class SettingsForm : Form
         Full(new Label { Text = $"MKV or MP4, up to {SharePolicy.MaxShareMegabytes} MB.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 2, 0, 4) }, true);
         feedback.AutoSize = true; feedback.ForeColor = Muted; feedback.Margin = new Padding(0, 8, 0, 0); Full(feedback);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
-        scroll.ClientSizeChanged += (_, _) => Relayout(); DpiChanged += (_, _) => { narrow = null; Relayout(); };
+        scroll.ClientSizeChanged += (_, _) => Relayout(); // WinForms rescales every control (margins, padding, sizes) after this event. Re-arranging inside it
+        // would scale the new DPI's spacing a second time, so re-arrange once that rescale has finished.
+        DpiChanged += (_, _) => BeginInvoke(() => { narrow = null; Relayout(); });
         scroll.HandleCreated += (_, _) => DarkScrollbars(scroll.Handle);
         EnableDrop(this);
         engine.StatusChanged += EngineStatus; ApplyMode(); UpdateStatus(); Relayout();
@@ -144,7 +147,9 @@ public sealed class SettingsForm : Form
     void EngineStatus(object? sender, EventArgs args) { if (!IsDisposed) UpdateStatus(); }
     void Row(string text, Control control, bool advancedOnly = false)
     {
-        var label = new Label { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 9, 12, 9) }; control.Dock = DockStyle.Fill; control.Margin = new Padding(0, 4, 0, 4);
+        var label = new Label { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 9, 12, 9) }; // Stretch horizontally, centre vertically: drop-downs and text boxes have a fixed height and would
+        // otherwise sit at the top of a taller row.
+        control.Anchor = AnchorStyles.Left | AnchorStyles.Right; control.Margin = new Padding(0, 4, 0, 4);
         // Two rows per entry: side by side uses the first one, the narrow layout stacks the control into the second.
         int row = table.RowCount; table.RowCount += 2; table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         table.Controls.Add(label, 0, row); table.Controls.Add(control, 1, row); rows.Add((label, control, row));
@@ -163,12 +168,12 @@ public sealed class SettingsForm : Form
     static void StyleCombo(ComboBox c)
     {
         c.DropDownStyle = ComboBoxStyle.DropDownList; c.BackColor = Color.FromArgb(24, 24, 24); c.ForeColor = White; c.FlatStyle = FlatStyle.Flat;
-        c.DrawMode = DrawMode.OwnerDrawFixed; c.ItemHeight = Math.Max(24, c.Font.Height + 6); c.DrawItem += (_, e) => { if (e.Index < 0) return; bool selected = (e.State & DrawItemState.Selected) != 0; using var background = new SolidBrush(selected ? White : Color.FromArgb(24, 24, 24)); e.Graphics.FillRectangle(background, e.Bounds); TextRenderer.DrawText(e.Graphics, c.Items[e.Index]?.ToString() ?? "", c.Font, e.Bounds, selected ? Black : White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis); e.DrawFocusRectangle(); };
+        c.DrawMode = DrawMode.OwnerDrawFixed; (c as MonoComboBox)?.FitItemHeight(); c.DrawItem += (_, e) => { if (e.Index < 0) return; bool selected = (e.State & DrawItemState.Selected) != 0; using var background = new SolidBrush(selected ? White : Color.FromArgb(24, 24, 24)); e.Graphics.FillRectangle(background, e.Bounds); TextRenderer.DrawText(e.Graphics, c.Items[e.Index]?.ToString() ?? "", c.Font, e.Bounds, selected ? Black : White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis); e.DrawFocusRectangle(); };
     }
     static void StyleText(TextBox t) { t.BackColor = Color.FromArgb(24, 24, 24); t.ForeColor = White; t.BorderStyle = BorderStyle.FixedSingle; }
     void StyleButton(Button b) { b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Line; b.BackColor = Black; b.ForeColor = White; b.AutoSize = true; b.Padding = new Padding(9, 4, 9, 4); b.MinimumSize = new Size(Px(100), Px(34)); b.Cursor = Cursors.Hand; b.UseVisualStyleBackColor = false; }
     Button Button(string text, Action action) { var b = new MonoButton { Text = text }; StyleButton(b); b.Click += (_, _) => action(); return b; }
-    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked, ShareMinutes = (int)shareMinutes.Value, AutoShare = autoShare.Checked }; s.Validate(); return s; }
+    public AppSettings ReadSettings() { var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) }; var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, AdvancedMode = advanced.Checked, ShareMinutes = (int)shareMinutes.Value, AutoShare = autoShare.Checked, SortByApp = sortByApp.Checked }; s.Validate(); return s; }
     void UpdateBudget()
     {
         if (fps.SelectedItem == null) return; var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) };

@@ -14,7 +14,7 @@ public static class ClipLibrary
     }
     public static ClipRecord Store(string sourceFile,string root,ClipContext context,AppSettings settings,string encoder)
     {
-        settings.Validate();var directory=Path.Combine(Path.GetFullPath(root),SafeName(context.Game));Directory.CreateDirectory(directory);
+        settings.Validate();var directory=settings.SortByApp?Path.Combine(Path.GetFullPath(root),SafeName(context.Game)):Path.GetFullPath(root);Directory.CreateDirectory(directory);
         var time=DateTimeOffset.Now;var destination=Path.Combine(directory,$"{time:yyyy-MM-dd_HH-mm-ss}_{Guid.NewGuid().ToString("N")[..8]}.mkv");
         try {File.Move(sourceFile,destination);}
         catch(IOException) when(File.Exists(sourceFile)&&!File.Exists(destination))
