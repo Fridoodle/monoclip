@@ -67,7 +67,7 @@ Test("settings expose required safe defaults", () =>
         ["Width"] = 1920, ["Height"] = 1080, ["Fps"] = 60, ["ClipSeconds"] = 30,
         ["Hotkey"] = "Ctrl+Shift+F9", ["Microphone"] = true, ["DesktopAudio"] = true,
         ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = true,
-        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false,
+        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["SortByApp"] = true,
         ["MicrophoneDevice"] = "default", ["DesktopDevice"] = "default",
         ["ClipsDirectory"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip")
     };
@@ -305,6 +305,14 @@ Test("one share server serves clip after clip and drops the previous path",()=>{
         server.Publish(a,"/x/a.mp4",60);Equal(1L,http.GetAsync("/x/a.mp4").Result.Content.Headers.ContentLength);
         server.Publish(b,"/y/b.mp4",120);Equal(404,(int)http.GetAsync("/x/a.mp4").Result.StatusCode);var second=http.GetAsync("/y/b.mp4").Result;Equal(2L,second.Content.Headers.ContentLength);Equal("public, max-age=120",second.Headers.CacheControl!.ToString());
         server.Unpublish();Equal(404,(int)http.GetAsync("/y/b.mp4").Result.StatusCode);Equal("",server.RequestPath);
+    }finally{Directory.Delete(dir,true);}
+});
+Test("unsorted clips go straight into the clip folder",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-flat-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var root=Path.Combine(dir,"clips");var a=Path.Combine(dir,"a.mkv");File.WriteAllBytes(a,[1]);var b=Path.Combine(dir,"b.mkv");File.WriteAllBytes(b,[2]);
+        var flat=ClipLibrary.Store(a,root,new("Some Game","game.exe","","game"),new AppSettings{SortByApp=false},"AMD");Equal(Path.GetFullPath(root),Path.GetDirectoryName(flat.Path));
+        var sorted=ClipLibrary.Store(b,root,new("Some Game","game.exe","","game"),new AppSettings(),"AMD");Equal(Path.Combine(Path.GetFullPath(root),"Some Game"),Path.GetDirectoryName(sorted.Path));
+        Equal(1,ClipLibrary.GetGames(root).Count);True(ClipLibrary.LatestClip(root)!=null,"latest clip not found");
     }finally{Directory.Delete(dir,true);}
 });
 // NEXT_TEST

@@ -2,7 +2,7 @@ using System.Media;
 using System.Text;
 namespace MonoClip.Windows.UI;
 
-public enum Sound { Clip, Upload, Link, Error }
+public enum Sound { Clip, Upload, Link, Error, BufferOn, BufferOff, ShareStopped, Launch }
 
 // Short synthesized cues instead of pop-up notifications. Generated once in memory, no files.
 // Windows plays one sound per process at a time, so cues are queued instead of cutting each other off.
@@ -24,7 +24,15 @@ public sealed class SoundEffects : IDisposable
         // Bright major arpeggio with a longer tail: done, link ready.
         Sound.Link => [new(0, 1047, 0.32, 0.11, 0.75), new(0.07, 1319, 0.32, 0.11, 0.7), new(0.14, 1568, 0.42, 0.16, 0.75)],
         // Two descending, rounder low notes: something went wrong.
-        _ => [new(0, 523, 0.16, 0.07, 0.9), new(0.12, 392, 0.22, 0.09, 0.9)],
+        Sound.Error => [new(0, 523, 0.16, 0.07, 0.9), new(0.12, 392, 0.22, 0.09, 0.9)],
+        // Quick rising fifth: recording is on.
+        Sound.BufferOn => [new(0, 587, 0.09, 0.04, 0.8), new(0.055, 880, 0.13, 0.05, 0.85)],
+        // The same fifth falling, softer: recording is off.
+        Sound.BufferOff => [new(0, 880, 0.09, 0.04, 0.7), new(0.055, 587, 0.15, 0.06, 0.65)],
+        // One soft note sliding down: the link is gone.
+        Sound.ShareStopped => [new(0, 698, 0.18, 0.07, 0.75, GlideTo: 466)],
+        // Gentle low arpeggio: MonoClip is running.
+        _ => [new(0, 523, 0.22, 0.08, 0.6), new(0.08, 659, 0.22, 0.08, 0.6), new(0.16, 784, 0.34, 0.13, 0.65)],
     };
 
     public static byte[] CreateWave(Sound sound)

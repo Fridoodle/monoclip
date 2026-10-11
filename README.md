@@ -36,6 +36,7 @@ The window shows the basic options; **Advanced settings** shows the rest.
 | Quality (advanced) | Balanced (15 Mbit/s at 1080p60) |
 | Desktop audio, microphone, sound effects (advanced) | on |
 | Start in tray, start buffer on launch (advanced) | on |
+| Sort clips by application (advanced) | on |
 | Share new clips automatically (advanced) | off |
 | Link lifetime (advanced) | 15 min |
 
@@ -43,7 +44,7 @@ Bitrate scales with resolution and frame rate: Performance is 0.6× Balanced, Qu
 
 ## Clips
 
-Clips are MKV files sorted into one folder per game (`Desktop` for everything else). Audio tracks: 1 mixed, 2 desktop, 3 microphone. `.pending` holds recordings whose export failed; they are not deleted automatically.
+Clips are MKV files sorted into one folder per game (`Desktop` for everything else). Turn off **Sort clips by application** to save them all directly in the clip folder. Audio tracks: 1 mixed, 2 desktop, 3 microphone. `.pending` holds recordings whose export failed; they are not deleted automatically.
 
 ## Sharing
 

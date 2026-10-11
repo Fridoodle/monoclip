@@ -17,6 +17,11 @@ static class WheelToPage
 }
 internal sealed class MonoComboBox : ComboBox
 {
+    // Owner-drawn rows have a fixed height that WinForms does not rescale when the window moves to a
+    // monitor with different scaling; recompute it whenever the DPI or the (rescaled) font changes.
+    internal void FitItemHeight() { if (DrawMode != DrawMode.Normal) ItemHeight = Math.Max(LogicalToDeviceUnits(24), Font.Height + LogicalToDeviceUnits(6)); }
+    protected override void OnFontChanged(EventArgs e) { base.OnFontChanged(e); FitItemHeight(); }
+    protected override void OnDpiChangedAfterParent(EventArgs e) { base.OnDpiChangedAfterParent(e); FitItemHeight(); }
     // Check the message first: DroppedDown itself sends a window message.
     protected override void WndProc(ref Message m) { if (m.Msg == WheelToPage.WmMouseWheel && !DroppedDown && WheelToPage.Forward(this, ref m)) return; base.WndProc(ref m); }
 }

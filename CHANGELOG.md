@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2
+
+- Fixed the settings window layout after moving it between monitors with different scaling (squashed drop-downs, misaligned and oversized rows).
+- New option "Sort clips by application" (advanced, on by default). When off, all clips are saved directly in the clip folder.
+- New sounds for starting and stopping the buffer and for stopping a share.
+- A short sound on the very first start, so new users notice that MonoClip is running in the tray.
+
 ## 1.0.1
 
 - "Start with Windows" always points to the version that was started last; no need to toggle it after an update.
