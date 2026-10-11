@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- Intel graphics (Quick Sync) are supported for recording. PCs with an AMD or NVIDIA card keep using it. Untested on Intel hardware so far.
+
 ## 1.0.3
 
 - Share links now open a small player page with a preview image, title, length and resolution, like Medal or YouTube links.

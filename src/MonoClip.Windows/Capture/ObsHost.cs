@@ -48,12 +48,12 @@ public sealed class ObsHost : IDisposable
             // The stock win-capture Vulkan helper resolves ../../data relative to the working directory.
             previousDirectory = Environment.CurrentDirectory; Directory.SetCurrentDirectory(Path.Combine(root, "runtime/obs-plugins/64bit"));
             // obs-ffmpeg provides the replay buffer; the streaming outputs (obs-outputs) are not needed.
-            foreach (var id in new[] { "win-capture", "win-wasapi", "obs-ffmpeg", "obs-nvenc" })
+            foreach (var id in new[] { "win-capture", "win-wasapi", "obs-ffmpeg", "obs-nvenc", "obs-qsv11" })
             {
                 var dll = Path.Combine(root, "runtime/obs-plugins/64bit", id + ".dll");
                 if (!File.Exists(dll)) continue;
                 var result = Obs.obs_open_module(out var module, dll.Replace('\\', '/'), Path.Combine(root, "runtime/data/obs-plugins", id).Replace('\\', '/'));
-                if (result != 0 || !Obs.obs_init_module(module)) { if (id == "obs-nvenc") continue; throw new InvalidOperationException($"OBS module {id} failed ({result})"); }
+                if (result != 0 || !Obs.obs_init_module(module)) { if (id is "obs-nvenc" or "obs-qsv11") continue; throw new InvalidOperationException($"OBS module {id} failed ({result})"); }
             }
             Obs.obs_post_load_modules();
             var encoders = new List<string>(); for (nuint i = 0; Obs.obs_enum_encoder_types(i, out var p); i++) encoders.Add(Obs.Str(p)); Encoders = encoders;

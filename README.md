@@ -2,7 +2,7 @@
 
 Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GPU-encoded buffer in RAM and saves them on a hotkey. It runs in the tray.
 
-> Windows 11 x64. Requires an AMD (AMF) or NVIDIA (NVENC) GPU encoder. Tested on AMD hardware; NVIDIA is untested. No Intel-only, CPU encoding or HDR support.
+> Windows 11 x64. Requires an AMD (AMF), NVIDIA (NVENC) or Intel (Quick Sync) GPU encoder. Tested on AMD hardware; NVIDIA and Intel are untested. No CPU encoding or HDR support.
 
 ## Features
 
