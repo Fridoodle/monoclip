@@ -38,6 +38,8 @@ The window shows the basic options; **Advanced settings** shows the rest.
 | Start in tray, start buffer on launch (advanced) | on |
 | Sort clips by application (advanced) | on |
 | Share new clips automatically (advanced) | off |
+| Copy new share links to the clipboard (advanced) | on |
+| Link to the video file instead of a player page (advanced) | off |
 | Link lifetime (advanced) | 15 min |
 
 Bitrate scales with resolution and frame rate: Performance is 0.6× Balanced, Quality is 1.6×, limited to 2.5–100 Mbit/s.
@@ -50,13 +52,14 @@ Clips are MKV files sorted into one folder per game (`Desktop` for everything el
 
 > **Sharing is experimental.** It relies on Cloudflare's free quick tunnels, which have no uptime guarantee. Creating a link can fail or take longer, especially after many links in a short time. If it fails, try again a few minutes later.
 
-**Share last clip** (tray or settings) creates a link and copies it to the clipboard. With **Share new clips automatically** this happens after every clip. To share any MKV/MP4 up to 500 MB, drag it onto the settings window or use **Share a file…**.
+**Share last clip** (tray or settings) creates a link and copies it to the clipboard (unless **Copy new share links to the clipboard** is off; **Copy link** always works). With **Share new clips automatically** this happens after every clip. To share any MKV/MP4 up to 500 MB, drag it onto the settings window or use **Share a file…**.
 
+- The link opens a small player page with a preview image (Open Graph tags, like Medal or YouTube links). **Link to the video file instead of a player page** (advanced) shares the MP4 directly.
+- Discord shows a player only if the whole video arrives within about 10 seconds. MonoClip measures your upload while sharing (stored in `%LOCALAPPDATA%\MonoClip\upload-speed.txt`) and gives Discord a copy that uploads in about 4 seconds: up to 1080p, at most 40 MB, 10 MB before the first measurement. Clips that already fit are embedded as they are; the page in a browser always plays the original.
 - The clip is remuxed to MP4 and served from `127.0.0.1` through a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). This works behind CGNAT and does not expose your IP address.
 - The link stops working after the chosen time or when sharing is stopped. A working tunnel is kept for 30 minutes after the last share, so the next clip is shared in about a second.
 - `cloudflared` (~55 MB) is downloaded from GitHub on first use and verified by SHA256.
 - Anyone with the link can watch and download the clip while it is online. Viewers stream from your upload connection (max. 6 connections).
-- Discord embeds videos up to roughly 100 MB.
 
 ## Troubleshooting
 

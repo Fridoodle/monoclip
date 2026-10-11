@@ -126,15 +126,21 @@ public sealed class TrayAppContext : ApplicationContext
         try
         {
             var progress = new Progress<string>(text => { form?.Feedback(text); SetTooltip("MonoClip · " + text); });
-            var info = await sharer.ShareAsync(clip, TimeSpan.FromMinutes(minutes), progress);
+            var info = await sharer.ShareAsync(clip, TimeSpan.FromMinutes(minutes), progress, new(settings.DirectLink, ClipTitle(clip)));
             lastShare = info; lastShareMinutes = minutes;
-            try { CopyText(info.Url); } catch (ExternalException) { }
+            if (settings.CopyShareLink) try { CopyText(info.Url); } catch (ExternalException) { }
             Cue(Sound.Link);
-            form?.Feedback($"Link copied. Online until {info.ExpiresAt:HH:mm} ({minutes} min).");
+            form?.Feedback($"{(settings.CopyShareLink ? "Link copied" : "Link ready")}. Online until {info.ExpiresAt:HH:mm} ({minutes} min).");
         }
         catch (OperationCanceledException) { form?.Feedback("Sharing cancelled."); }
         catch (Exception e) { Fail("Sharing failed: " + e.Message); }
         finally { UpdateTray(); }
+    }
+    // "Valorant clip" for clips sorted into a game folder, otherwise a generic title.
+    internal string ClipTitle(string clip)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(clip)); var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.ClipsDirectory));
+        return folder != null && string.Equals(Path.GetDirectoryName(folder), root, StringComparison.OrdinalIgnoreCase) ? Path.GetFileName(folder) + " clip" : "MonoClip clip";
     }
     void CopyShareLink() { if (sharer?.Current is not { } c) return; CopyText(c.Url); form?.Feedback($"Link copied. Online until {c.ExpiresAt:HH:mm}."); }
     void ShareChanged(object? sender, EventArgs args)

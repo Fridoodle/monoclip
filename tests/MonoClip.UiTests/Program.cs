@@ -148,6 +148,10 @@ internal static class Program
                 using var off=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{Hotkey="Ctrl+Alt+Shift+F5",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"b.json"),false,_=>{},sharer);sharer.Stop();sharer.SharedClip=null;
                 typeof(MonoClip.Windows.UI.TrayAppContext).GetMethod("ClipSaved",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(off,new object?[]{null,new MonoClip.Windows.ClipSavedEventArgs(new(clip,"Desktop",DateTimeOffset.Now,5,1920,1080,60,"test",new("Desktop","","","desktop")))});
                 Equal<string?>(null,sharer.SharedClip);
+                // Copying can be turned off: the link is shared, the clipboard stays untouched.
+                copied=null;using var quiet=new MonoClip.Windows.UI.TrayAppContext(new FakeEngine(),new MonoClip.Core.AppSettings{AutoShare=true,CopyShareLink=false,Hotkey="Ctrl+Alt+Shift+F7",StartBufferOnLaunch=false,ClipsDirectory=dir},Path.Combine(dir,"c.json"),false,_=>{},sharer){CopyText=t=>copied=t};
+                typeof(MonoClip.Windows.UI.TrayAppContext).GetMethod("ClipSaved",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(quiet,new object?[]{null,new MonoClip.Windows.ClipSavedEventArgs(new(clip,"Desktop",DateTimeOffset.Now,5,1920,1080,60,"test",new("Desktop","","","desktop")))});Application.DoEvents();
+                Equal(clip,sharer.SharedClip);Equal<string?>(null,copied);
             }finally{Directory.Delete(dir,true);}
         });
         Test("Manually chosen files are checked before anything is shared",()=>{
@@ -188,7 +192,8 @@ internal static class Program
                 var tray=(NotifyIcon)typeof(MonoClip.Windows.UI.TrayAppContext).GetField("tray",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(ctx)!;var items=tray.ContextMenuStrip!.Items.Cast<ToolStripItem>().ToList();
                 var share=(ToolStripMenuItem)items.Single(i=>i.Text!.StartsWith("Share last clip"));Equal("Share last clip (15 min)",share.Text);if(items.IndexOf(share)<1||items[^1].Text!="Exit")throw new Exception("share item misplaced");
                 share.PerformClick();Application.DoEvents();
-                Equal(clip,sharer.SharedClip);Equal(TimeSpan.FromMinutes(15),sharer.Duration);Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Stop sharing (15 min left)"))throw new Exception("active share not shown: "+share.Text);
+                Equal(clip,sharer.SharedClip);Equal(TimeSpan.FromMinutes(15),sharer.Duration);Equal("Game clip",sharer.Options!.Title);Equal(false,sharer.Options.DirectLink);
+                Equal("MonoClip clip",ctx.ClipTitle(Path.Combine(dir,"flat.mkv")));Equal("MonoClip clip",ctx.ClipTitle(@"C:\Elsewhere\Game\x.mkv"));Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);if(!share.Text!.StartsWith("Stop sharing (15 min left)"))throw new Exception("active share not shown: "+share.Text);
                 var again=(ToolStripMenuItem)items.Single(i=>i.Text=="Copy link");copied=null;again.PerformClick();Equal("https://fake-host.trycloudflare.com/t/clip.mp4",copied);
                 share.PerformClick();Application.DoEvents();Equal<object?>(null,sharer.Current);if(!share.Text!.StartsWith("Share last clip"))throw new Exception("stopped share still shown");
             }finally{Directory.Delete(dir,true);}
@@ -229,6 +234,7 @@ internal static class Program
             copy.PerformClick();Equal(1,copies);
             Equal(20,form.ReadSettings().ShareMinutes);((NumericUpDown)F("shareMinutes")).Value=30;Equal(30,form.ReadSettings().ShareMinutes);
             Equal(false,form.ReadSettings().AutoShare);((CheckBox)F("autoShare")).Checked=true;Equal(true,form.ReadSettings().AutoShare);
+            Equal(true,form.ReadSettings().CopyShareLink);((CheckBox)F("copyLink")).Checked=false;Equal(false,form.ReadSettings().CopyShareLink);
             form.Close();
         });
         Test("Startup entry follows the running copy and is only rewritten when it differs",()=>{
@@ -280,6 +286,11 @@ internal static class Program
             using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});
             var box=(CheckBox)typeof(MonoClip.Windows.UI.SettingsForm).GetField("sortByApp",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
             Equal(true,form.ReadSettings().SortByApp);box.Checked=false;Equal(false,form.ReadSettings().SortByApp);form.Show();Application.DoEvents();if(box.Visible)throw new Exception("visible in simple mode");form.Close();
+        });
+        Test("Player page is the default, direct video link is an advanced option",()=>{
+            using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});
+            var box=(CheckBox)typeof(MonoClip.Windows.UI.SettingsForm).GetField("directLink",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            Equal(false,form.ReadSettings().DirectLink);box.Checked=true;Equal(true,form.ReadSettings().DirectLink);form.Show();Application.DoEvents();if(box.Visible)throw new Exception("visible in simple mode");form.Close();
         });
         Test("Advanced mode toggle persists immediately",()=>{
             MonoClip.Core.AppSettings? saved=null;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),s=>saved=s,()=>{},()=>{});
