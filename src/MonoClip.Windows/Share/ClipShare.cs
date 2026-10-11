@@ -12,6 +12,9 @@ public sealed class ClipShare : IClipSharer
     const int Attempts = 3;
     static readonly TimeSpan KeepTunnel = TimeSpan.FromMinutes(30);
     static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MonoClip", "share");
+    // Measured upload speed in bytes per second (SharePolicy.UpdateUploadEstimate), kept across sessions.
+    static readonly string UploadFile = Path.Combine(Path.GetDirectoryName(Root)!, "upload-speed.txt");
+    double upload;
     readonly System.Windows.Forms.Timer expiry = new(), idle = new(); readonly SynchronizationContext ui;
     ClipShareServer? server; CloudflaredTunnel? tunnel; string? copy; CancellationTokenSource? starting;
     public ShareInfo? Current { get; private set; }
@@ -23,15 +26,16 @@ public sealed class ClipShare : IClipSharer
         ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         expiry.Tick += (_, _) => Stop();
         idle.Tick += (_, _) => { idle.Stop(); if (Current == null && starting == null) CloseTunnel(); };
+        try { if (File.Exists(UploadFile) && double.TryParse(File.ReadAllText(UploadFile), System.Globalization.CultureInfo.InvariantCulture, out var known) && known > 0) upload = known; } catch (IOException) { } catch (UnauthorizedAccessException) { }
         // Copies from a crashed session are never served again.
         try { if (Directory.Exists(Root)) foreach (var f in Directory.EnumerateFiles(Root)) TryDelete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
-    public async Task<ShareInfo> ShareAsync(string clipPath, TimeSpan duration, IProgress<string>? progress = null)
+    public async Task<ShareInfo> ShareAsync(string clipPath, TimeSpan duration, IProgress<string>? progress = null, ShareOptions? options = null)
     {
         if (duration < TimeSpan.FromMinutes(SharePolicy.MinMinutes) || duration > TimeSpan.FromMinutes(SharePolicy.MaxMinutes)) throw new ArgumentOutOfRangeException(nameof(duration));
         if (!File.Exists(clipPath)) throw new FileNotFoundException("Clip not found.", clipPath);
         Stop(); idle.Stop(); var cancel = new CancellationTokenSource(); starting = cancel; Changed?.Invoke(this, EventArgs.Empty);
-        var token = SharePolicy.NewToken(); var target = Path.Combine(Root, token + ".mp4"); Task remux = Task.CompletedTask;
+        var token = SharePolicy.NewToken(); var target = Path.Combine(Root, token + ".mp4"); Task remux = Task.CompletedTask; Task<Preview>? preview = null;
         try
         {
             Directory.CreateDirectory(Root); copy = target;
@@ -40,6 +44,10 @@ public sealed class ClipShare : IClipSharer
             progress?.Report(tunnel != null ? "Preparing clip…" : "Preparing clip · requesting link…");
             // Cloudflare needs about 6 s to assign a new link: prepare the MP4 in the meantime, not before.
             remux = Task.Run(() => ClipRemux.ToFastStartMp4(clipPath, target), cancel.Token);
+            // Preview image and video facts for the page, prepared while Cloudflare assigns the link.
+            options ??= new(); var title = string.IsNullOrWhiteSpace(options.Title) ? "MonoClip clip" : options.Title;
+            var budget = SharePolicy.EmbedBudget(upload);
+            preview = options.DirectLink ? null : remux.ContinueWith(_ => PreparePreviewAsync(target, title, budget, cancel.Token), cancel.Token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default).Unwrap();
             CloudflaredTunnel t;
             for (int attempt = 1; ; attempt++)
             {
@@ -59,7 +67,22 @@ public sealed class ClipShare : IClipSharer
                 await Task.Delay(TimeSpan.FromSeconds(2), cancel.Token);
             }
             // The window counts from the moment the link is handed out, not from the start of preparation.
-            var info = new ShareInfo(t.PublicUrl + local.RequestPath, DateTimeOffset.Now + duration, clipPath);
+            var url = t.PublicUrl + local.RequestPath;
+            if (preview != null)
+            {
+                progress?.Report("Creating preview…");
+                // A failed preview must not fail the share: the direct video link still works.
+                try
+                {
+                    var (mp4, jpeg, imageWidth, imageHeight, embed) = await preview;
+                    var page = new SharePageInfo(title, SharePage.Describe(mp4), t.PublicUrl + SharePolicy.PagePath(token), url, t.PublicUrl + SharePolicy.ImagePath(token), mp4?.Width ?? 1920, mp4?.Height ?? 1080, imageWidth, imageHeight,
+                        embed != null ? t.PublicUrl + SharePolicy.EmbedPath(token) : null, embed?.Width ?? 0, embed?.Height ?? 0);
+                    local.AttachPage(new(SharePolicy.PagePath(token), System.Text.Encoding.UTF8.GetBytes(SharePage.Build(page)), SharePolicy.ImagePath(token), jpeg, SharePolicy.EmbedPath(token), embed != null ? EmbedFile(target) : null));
+                    url = page.PageUrl;
+                }
+                catch (Exception e) when (e is not OperationCanceledException || !cancel.IsCancellationRequested) { }
+            }
+            var info = new ShareInfo(url, DateTimeOffset.Now + duration, clipPath);
             Current = info; expiry.Interval = (int)duration.TotalMilliseconds; expiry.Start();
             return info;
         }
@@ -67,12 +90,40 @@ public sealed class ClipShare : IClipSharer
         {
             // Let a running remux finish first, otherwise it could recreate the copy after cleanup.
             try { await remux; } catch { }
-            if (ReferenceEquals(starting, cancel)) Stop(); else TryDelete(target);
+            try { if (preview != null) await preview; } catch { }
+            if (ReferenceEquals(starting, cancel)) Stop(); else { TryDelete(target); TryDelete(EmbedFile(target)); }
             throw;
         }
         finally { if (ReferenceEquals(starting, cancel)) starting = null; cancel.Dispose(); Changed?.Invoke(this, EventArgs.Empty); }
     }
-    static ClipShareServer StartServer() { var s = new ClipShareServer(); s.Start(); return s; }
+    sealed record Preview(Mp4Info? Info, byte[] Jpeg, int Width, int Height, Mp4Info? Embed);
+    // 1280 px wide preview in the clip's aspect ratio. A thumbnail that takes too long falls back to the placeholder.
+    // Large clips also get the smaller embed copy; without it (failed, or not needed) chat apps get the original.
+    static async Task<Preview> PreparePreviewAsync(string mp4, string title, long budget, CancellationToken cancel)
+    {
+        Mp4Info? info = null; try { info = Mp4Info.Read(mp4); } catch (IOException) { } catch (InvalidDataException) { }
+        var embed = Task.FromResult<Mp4Info?>(null);
+        if (info != null && SharePolicy.NeedsEmbedCopy(new FileInfo(mp4).Length, budget))
+            embed = Task.Run(() =>
+            {
+                try { ClipEmbedCopy.Create(mp4, EmbedFile(mp4), info.Duration, budget, cancel); return Mp4Info.Read(EmbedFile(mp4)); }
+                catch (Exception e) when (e is not OperationCanceledException) { TryDelete(EmbedFile(mp4)); return null; }
+            }, cancel);
+        int width = 1280, height = info is { Width: > 0, Height: > 0 } ? Math.Clamp(1280 * info.Height / info.Width, 360, 1280) : 720;
+        byte[] jpeg;
+        try { jpeg = await ClipThumbnail.CreateJpegAsync(mp4, width, height, title).WaitAsync(TimeSpan.FromSeconds(5)); }
+        // Any failure (timeout, shell error) only costs the real frame, never the page.
+        catch (Exception e) when (e is not OperationCanceledException) { jpeg = ClipThumbnail.CreateJpeg("", width, height, title); }
+        return new(info, jpeg, width, height, await embed);
+    }
+    static string EmbedFile(string copy) => Path.ChangeExtension(copy, ".embed.mp4");
+    ClipShareServer StartServer() { var s = new ClipShareServer { Sent = Measured }; s.Start(); return s; }
+    // Runs on a server thread; the estimate is a plain double, a lost update only skips one measurement.
+    void Measured(long bytes, TimeSpan elapsed)
+    {
+        var next = SharePolicy.UpdateUploadEstimate(upload, bytes, elapsed); if (next == upload) return; upload = next;
+        try { File.WriteAllText(UploadFile, ((long)next).ToString(System.Globalization.CultureInfo.InvariantCulture)); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
     async Task<CloudflaredTunnel> OpenTunnelAsync(ClipShareServer local, IProgress<string>? progress, CancellationToken cancel)
     {
         var t = await CloudflaredTunnel.StartAsync(local.Port, progress, cancel);
@@ -139,7 +190,7 @@ public sealed class ClipShare : IClipSharer
         bool changed = Current != null || starting != null;
         starting?.Cancel(); starting = null; expiry.Stop();
         server?.Unpublish();
-        if (copy != null) { TryDelete(copy); copy = null; }
+        if (copy != null) { TryDelete(copy); TryDelete(EmbedFile(copy)); copy = null; }
         Current = null;
         if (tunnel != null) { idle.Interval = (int)KeepTunnel.TotalMilliseconds; idle.Start(); }
         if (changed) Changed?.Invoke(this, EventArgs.Empty);

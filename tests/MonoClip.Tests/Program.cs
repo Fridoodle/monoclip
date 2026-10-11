@@ -67,7 +67,7 @@ Test("settings expose required safe defaults", () =>
         ["Width"] = 1920, ["Height"] = 1080, ["Fps"] = 60, ["ClipSeconds"] = 30,
         ["Hotkey"] = "Ctrl+Shift+F9", ["Microphone"] = true, ["DesktopAudio"] = true,
         ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = true,
-        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["SortByApp"] = true,
+        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["CopyShareLink"] = true, ["SortByApp"] = true, ["DirectLink"] = false,
         ["MicrophoneDevice"] = "default", ["DesktopDevice"] = "default",
         ["ClipsDirectory"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip")
     };
@@ -315,6 +315,62 @@ Test("unsorted clips go straight into the clip folder",()=>{
         Equal(1,ClipLibrary.GetGames(root).Count);True(ClipLibrary.LatestClip(root)!=null,"latest clip not found");
     }finally{Directory.Delete(dir,true);}
 });
+Test("mp4 info reads video size and duration, skipping audio tracks",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-mp4info-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var file=Path.Combine(dir,"c.mp4");File.WriteAllBytes(file,Mp4Fixture.WithTracks(timescale:1000,length:34500,(0,0),(1920,1080)));
+        var info=Mp4Info.Read(file)!;Equal(1920,info.Width);Equal(1080,info.Height);Equal(34.5,info.Duration.TotalSeconds);
+        Equal("0:34 · 1920×1080 · shared with MonoClip",SharePage.Describe(info));
+        File.WriteAllBytes(file,[0,0,0,8,(byte)'f',(byte)'r',(byte)'e',(byte)'e']);Equal<Mp4Info?>(null,Mp4Info.Read(file));
+    }finally{Directory.Delete(dir,true);}
+});
+Test("share page carries video preview tags and escapes its text",()=>{
+    var html=SharePage.Build(new("<script>alert(1)</script> clip","0:30 · 1920×1080","https://a.trycloudflare.com/tok","https://a.trycloudflare.com/tok/c.mp4","https://a.trycloudflare.com/tok/preview.jpg",1920,1080,1280,720));
+    foreach(var tag in new[]{"property=\"og:site_name\" content=\"Clipped with MonoClip\"","property=\"og:type\" content=\"video.other\"","property=\"og:video\" content=\"https://a.trycloudflare.com/tok/c.mp4\"","property=\"og:video:type\" content=\"video/mp4\"","property=\"og:video:width\" content=\"1920\"","property=\"og:video:height\" content=\"1080\"","property=\"og:image\" content=\"https://a.trycloudflare.com/tok/preview.jpg\"","property=\"og:image:width\" content=\"1280\"","name=\"twitter:card\" content=\"player\"","<video src=\"https://a.trycloudflare.com/tok/c.mp4\""})
+        True(html.Contains(tag),"missing "+tag);
+    True(!html.Contains("<script>"),"title not escaped");True(html.Contains("&lt;script&gt;"),"escaped title missing");
+});
+Test("share server serves the player page and preview image next to the clip",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-page-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var file=Path.Combine(dir,"c.mp4");File.WriteAllBytes(file,new byte[100]);using var server=new ClipShareServer(file,"/tok/c.mp4");server.Start();using var http=new HttpClient{BaseAddress=new($"http://127.0.0.1:{server.Port}")};
+        Equal(404,(int)http.GetAsync("/tok").Result.StatusCode);
+        server.AttachPage(new("/tok",Encoding.UTF8.GetBytes("<html>page</html>"),"/tok/preview.jpg",[0xFF,0xD8,0xFF]));
+        foreach(var path in new[]{"/tok","/tok/","/tok?x=1"}){var page=http.GetAsync(path).Result;Equal(200,(int)page.StatusCode);Equal("text/html",page.Content.Headers.ContentType!.MediaType);Equal("<html>page</html>",page.Content.ReadAsStringAsync().Result);}
+        var image=http.GetAsync("/tok/preview.jpg").Result;Equal("image/jpeg",image.Content.Headers.ContentType!.MediaType);Equal(3,image.Content.ReadAsByteArrayAsync().Result.Length);
+        var head=http.Send(new HttpRequestMessage(HttpMethod.Head,"/tok"));Equal(17L,head.Content.Headers.ContentLength);Equal(0,head.Content.ReadAsByteArrayAsync().Result.Length);
+        Equal(100,http.GetAsync("/tok/c.mp4").Result.Content.ReadAsByteArrayAsync().Result.Length);
+        foreach(var bad in new[]{"/tok/other.jpg","/TOK","/tok//"})Equal(404,(int)http.GetAsync(bad).Result.StatusCode);
+        server.Publish(file,"/new/c.mp4",60);Equal(404,(int)http.GetAsync("/tok").Result.StatusCode);
+    }finally{Directory.Delete(dir,true);}
+});
+Test("large clips get an embed copy sized for Discord",()=>{
+    Equal(SharePolicy.DefaultEmbedBytes,SharePolicy.EmbedBudget(0));Equal(20L*1024*1024,SharePolicy.EmbedBudget(5*1024*1024));
+    Equal(SharePolicy.MaxEmbedBytes,SharePolicy.EmbedBudget(100e6));Equal(SharePolicy.MinEmbedBytes,SharePolicy.EmbedBudget(100_000));
+    True(!SharePolicy.NeedsEmbedCopy(9_500_000,SharePolicy.DefaultEmbedBytes),"small clip copied");True(SharePolicy.NeedsEmbedCopy(66_000_000,SharePolicy.DefaultEmbedBytes),"large clip not copied");
+    True(!SharePolicy.NeedsEmbedCopy(20_000_000,SharePolicy.EmbedBudget(5*1024*1024)),"clip within a fast upload's budget copied");
+    Equal(2_596_202,SharePolicy.EmbedVideoBitrate(TimeSpan.FromSeconds(30),SharePolicy.DefaultEmbedBytes));Equal(12_000_000,SharePolicy.EmbedVideoBitrate(TimeSpan.FromSeconds(5),SharePolicy.MaxEmbedBytes));Equal(500_000,SharePolicy.EmbedVideoBitrate(TimeSpan.FromMinutes(5),SharePolicy.MinEmbedBytes));
+    Equal(720,SharePolicy.EmbedHeight(2_596_202));Equal(1080,SharePolicy.EmbedHeight(8_000_000));Equal(540,SharePolicy.EmbedHeight(1_000_000));
+    Equal(0.0,SharePolicy.UpdateUploadEstimate(0,1_000_000,TimeSpan.FromSeconds(1)));Equal(5e6,SharePolicy.UpdateUploadEstimate(0,10_000_000,TimeSpan.FromSeconds(2)));Equal(4e6,SharePolicy.UpdateUploadEstimate(5e6,6_000_000,TimeSpan.FromSeconds(2)));
+    Equal("/tok/embed.mp4",SharePolicy.EmbedPath("tok"));
+});
+Test("share page gives chat apps the embed copy and plays the original itself",()=>{
+    var html=SharePage.Build(new("Clip","0:30","https://a.trycloudflare.com/tok","https://a.trycloudflare.com/tok/c.mp4","https://a.trycloudflare.com/tok/preview.jpg",1920,1080,1280,720,"https://a.trycloudflare.com/tok/embed.mp4",1280,720));
+    foreach(var tag in new[]{"property=\"og:video\" content=\"https://a.trycloudflare.com/tok/embed.mp4\"","property=\"og:video:width\" content=\"1280\"","property=\"og:video:height\" content=\"720\"","<video src=\"https://a.trycloudflare.com/tok/c.mp4\""})
+        True(html.Contains(tag),"missing "+tag);
+});
+Test("share server serves the embed copy with ranges, only while attached",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-embed-"+Guid.NewGuid());Directory.CreateDirectory(dir);
+    try{var file=Path.Combine(dir,"c.mp4");var small=Path.Combine(dir,"c.embed.mp4");File.WriteAllBytes(file,new byte[100]);File.WriteAllBytes(small,Enumerable.Range(0,40).Select(i=>(byte)i).ToArray());
+        using var server=new ClipShareServer(file,"/tok/c.mp4");server.Start();using var http=new HttpClient{BaseAddress=new($"http://127.0.0.1:{server.Port}")};
+        Equal(404,(int)http.GetAsync("/tok/embed.mp4").Result.StatusCode);
+        server.AttachPage(new("/tok",[1],"/tok/preview.jpg",[2],"/tok/embed.mp4",small));
+        var sent=new List<long>();server.Sent=(bytes,_)=>{lock(sent)sent.Add(bytes);};
+        var whole=http.GetAsync("/tok/embed.mp4").Result;Equal("video/mp4",whole.Content.Headers.ContentType!.MediaType);Equal(40,whole.Content.ReadAsByteArrayAsync().Result.Length);
+        var part=new HttpRequestMessage(HttpMethod.Get,"/tok/embed.mp4");part.Headers.Range=new(10,19);var r=http.Send(part);Equal(206,(int)r.StatusCode);Equal(10,(int)r.Content.ReadAsByteArrayAsync().Result[0]);
+        Equal(100,http.GetAsync("/tok/c.mp4").Result.Content.ReadAsByteArrayAsync().Result.Length);
+        lock(sent)Equal("40,10,100",string.Join(",",sent));
+        server.AttachPage(new("/tok",[1],"/tok/preview.jpg",[2]));Equal(404,(int)http.GetAsync("/tok/embed.mp4").Result.StatusCode);
+    }finally{Directory.Delete(dir,true);}
+});
 // NEXT_TEST
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;
@@ -340,6 +396,13 @@ static class Mp4Fixture
         var ftyp=Box("ftyp",Encoding.ASCII.GetBytes("isom"),new byte[4]);byte[] Moov(long mdatAt)=>Box("moov",Box("trak",Box("mdia",Box("minf",Box("stbl",Box(wide?"co64":"stco",Offsets(wide,mdatAt+8,mdatAt+58)))))));
         if(!moovFirst)return[..ftyp,..Box("mdat",payload),..Moov(ftyp.Length)];
         var moovSize=Moov(0).Length;return[..ftyp,..Moov(ftyp.Length+moovSize),..Box("mdat",payload)];
+    }
+    // moov{mvhd, trak{tkhd(w,h)}...}+mdat, for Mp4Info.
+    public static byte[] WithTracks(uint timescale,uint length,params (int W,int H)[] tracks)
+    {
+        var mvhd=new byte[100];BinaryPrimitives.WriteUInt32BigEndian(mvhd.AsSpan(12),timescale);BinaryPrimitives.WriteUInt32BigEndian(mvhd.AsSpan(16),length);
+        var traks=tracks.Select(t=>{var tkhd=new byte[84];BinaryPrimitives.WriteUInt32BigEndian(tkhd.AsSpan(76),(uint)t.W<<16);BinaryPrimitives.WriteUInt32BigEndian(tkhd.AsSpan(80),(uint)t.H<<16);return Box("trak",Box("tkhd",tkhd));}).ToArray();
+        return[..Box("ftyp",Encoding.ASCII.GetBytes("isom"),new byte[4]),..Box("moov",[Box("mvhd",mvhd),..traks]),..Box("mdat",new byte[16])];
     }
     public static int IndexOf(byte[] data,string type)=>data.AsSpan().IndexOf(Encoding.ASCII.GetBytes(type));
     public static long[] ChunkOffsets(byte[] data,bool wide){int at=IndexOf(data,wide?"co64":"stco")+4;int count=(int)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(at+4));return Enumerable.Range(0,count).Select(i=>wide?(long)BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(at+8+i*8)):BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(at+8+i*4))).ToArray();}

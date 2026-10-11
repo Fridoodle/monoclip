@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+- Share links now open a small player page with a preview image, title, length and resolution, like Medal or YouTube links.
+- Large clips now play in Discord. Discord shows a player only if the whole video has arrived about 10 seconds after it opened the link, which a home upload cannot do for big clips. MonoClip measures your upload speed while sharing and gives Discord a copy that uploads in about 4 seconds (up to 1080p, at most 40 MB; 10 MB before the first measurement). Clips that already fit are embedded as they are. The copy is made on the GPU with Windows Media Foundation in about 5 seconds, so it does not slow down a running game; the page itself still plays the original.
+- Advanced option "Link to the video file instead of a player page" for the previous behaviour.
+- Advanced option "Copy new share links to the clipboard" (on by default).
+
 ## 1.0.2
 
 - Fixed the settings window layout after moving it between monitors with different scaling (squashed drop-downs, misaligned and oversized rows).

@@ -4,6 +4,51 @@ class Program {
 [STAThread] static int Main(string[] args) {
 Console.OutputEncoding = System.Text.Encoding.UTF8; Console.InputEncoding = System.Text.Encoding.UTF8;
 try {
+    if(args.Contains("--share-throttled")) {
+        // Diagnostics: is Discord's embed limit a size or a download time? Serves one MP4 with a player page
+        // through a tunnel per given rate (KB/s); a loopback proxy slows each response down to that rate.
+        int at=Array.IndexOf(args,"--share-throttled"),seconds=int.Parse(args[at+1]);var file=args[at+2];var rates=args.Skip(at+3).Select(int.Parse).ToArray();
+        var cleanup=new List<IDisposable>();var name=Path.GetFileNameWithoutExtension(file);var facts=MonoClip.Core.Mp4Info.Read(file)!;
+        var jpeg=MonoClip.Windows.Share.ClipThumbnail.CreateJpegAsync(file,1280,720,name).GetAwaiter().GetResult();
+        try {
+            foreach(var rate in rates){
+                var token=MonoClip.Core.SharePolicy.NewToken();var path=MonoClip.Core.SharePolicy.RequestPath(token,file);
+                var srv=new MonoClip.Core.ClipShareServer(file,path);srv.Start();cleanup.Add(srv);var label=$"{name}@{rate}KB/s";srv.Log=line=>Console.WriteLine($"{DateTime.Now:HH:mm:ss} [{label}] {line}");
+                var proxy=new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback,0);proxy.Start();int target=srv.Port;
+                _=Task.Run(async()=>{while(true){var c=await proxy.AcceptTcpClientAsync();_=Task.Run(async()=>{using var client=c;using var upstream=new System.Net.Sockets.TcpClient();await upstream.ConnectAsync(System.Net.IPAddress.Loopback,target);
+                    var a=client.GetStream();var b=upstream.GetStream();var up=a.CopyToAsync(b);
+                    var down=Task.Run(async()=>{var buf=new byte[16384];long sent=0;var clock=System.Diagnostics.Stopwatch.StartNew();int n;
+                        try{while((n=await b.ReadAsync(buf))>0){await a.WriteAsync(buf.AsMemory(0,n));sent+=n;var due=TimeSpan.FromSeconds(sent/1024.0/rate)-clock.Elapsed;if(due>TimeSpan.Zero)await Task.Delay(due);}}catch(IOException){}});
+                    try{await Task.WhenAny(up,down);await down;}catch{}});}});
+                var tunnel=MonoClip.Windows.Share.CloudflaredTunnel.StartAsync(((System.Net.IPEndPoint)proxy.LocalEndpoint).Port,null,CancellationToken.None).GetAwaiter().GetResult();cleanup.Add(tunnel);
+                var origin=tunnel.PublicUrl;var page=new MonoClip.Core.SharePageInfo(name,MonoClip.Core.SharePage.Describe(facts),origin+"/"+token,origin+path,origin+MonoClip.Core.SharePolicy.ImagePath(token),facts.Width,facts.Height,1280,720);
+                srv.AttachPage(new(MonoClip.Core.SharePolicy.PagePath(token),System.Text.Encoding.UTF8.GetBytes(MonoClip.Core.SharePage.Build(page)),MonoClip.Core.SharePolicy.ImagePath(token),jpeg));
+                Console.WriteLine($"LINK {label} ~{new FileInfo(file).Length/1024/rate}s {page.PageUrl}");
+            }
+            var hold=System.Diagnostics.Stopwatch.StartNew();while(hold.Elapsed.TotalSeconds<seconds)Thread.Sleep(200);
+            Console.WriteLine("DONE");return 0;
+        } finally { foreach(var d in cleanup)d.Dispose(); }
+    }
+    if(args.Contains("--share-many")) {
+        // Diagnostics for chat embed limits: share each given MP4 through its own tunnel with a player page whose
+        // og:video is the file itself (no embed copy), print the links and log every request for N seconds.
+        int at=Array.IndexOf(args,"--share-many"),seconds=int.Parse(args[at+1]);var files=args.Skip(at+2).ToArray();// All instances first: a new ClipShare clears copies left in the share folder.
+        var shares=files.Select(_=>new MonoClip.Windows.Share.ClipShare()).ToList();
+        try {
+            for(int i=0;i<files.Length;i++){
+                var file=files[i];var share=shares[i];var name=Path.GetFileNameWithoutExtension(file);
+                var sharing=share.ShareAsync(file,TimeSpan.FromMinutes(Math.Max(5,(seconds+59)/60)),null,new(true,name));while(!sharing.IsCompleted){Application.DoEvents();Thread.Sleep(20);}
+                var video=new Uri(sharing.GetAwaiter().GetResult().Url);var origin=video.GetLeftPart(UriPartial.Authority);var token=video.AbsolutePath.Split('/')[1];
+                var srv=(MonoClip.Core.ClipShareServer)typeof(MonoClip.Windows.Share.ClipShare).GetField("server",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(share)!;
+                var facts=MonoClip.Core.Mp4Info.Read(file)!;var jpeg=MonoClip.Windows.Share.ClipThumbnail.CreateJpegAsync(file,1280,720,name).GetAwaiter().GetResult();
+                var page=new MonoClip.Core.SharePageInfo(name,MonoClip.Core.SharePage.Describe(facts),origin+"/"+token,video.ToString(),origin+MonoClip.Core.SharePolicy.ImagePath(token),facts.Width,facts.Height,1280,720);
+                srv.AttachPage(new(MonoClip.Core.SharePolicy.PagePath(token),System.Text.Encoding.UTF8.GetBytes(MonoClip.Core.SharePage.Build(page)),MonoClip.Core.SharePolicy.ImagePath(token),jpeg));
+                srv.Log=line=>Console.WriteLine($"{DateTime.Now:HH:mm:ss} [{name}] {line}");Console.WriteLine($"LINK {name} {new FileInfo(file).Length/1024/1024} MB {page.PageUrl}");
+            }
+            var hold=System.Diagnostics.Stopwatch.StartNew();while(hold.Elapsed.TotalSeconds<seconds){Application.DoEvents();Thread.Sleep(50);}
+            Console.WriteLine("DONE");return 0;
+        } finally { foreach(var s in shares)s.Dispose(); }
+    }
     if(args.Contains("--monitor-alias")) {
         var method=typeof(ForegroundTracker).GetMethod("StableMonitorId",System.Reflection.BindingFlags.Static|System.Reflection.BindingFlags.NonPublic)??throw new Exception("stable monitor fallback missing");
         var name=Screen.PrimaryScreen!.DeviceName;if((string)method.Invoke(null,new object[]{"",name})! != name)throw new Exception("display alias lost on missing device GUID");
@@ -18,11 +63,53 @@ try {
         using var data=new ObsData().Set("monitor_id","DUMMY");var source=Obs.obs_source_create("monitor_capture","Properties fallback regression",data.Handle,IntPtr.Zero);
         try {var props=Obs.obs_source_properties(source);if(props==IntPtr.Zero)throw new Exception("monitor properties are missing");try{var list=Obs.obs_properties_get(props,"monitor_id");if(list==IntPtr.Zero||Obs.obs_property_list_item_count(list)<1)throw new Exception("monitor picker is empty");Console.WriteLine("PASS real monitor fallback properties API");}finally{Obs.obs_properties_destroy(props);}}finally{Obs.obs_source_release(source);}return 0;
     }
-    if(args.Contains("--share-remux")||args.Contains("--share-live")) {
+    if(args.Contains("--share-remux")||args.Contains("--share-live")||args.Contains("--share-preview")||args.Contains("--share-hold")||args.Contains("--share-embed")) {
         // Synthetic game-fixture clip only: nothing from the real desktop leaves the PC.
         var fixtureClips=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","GameVerificationClips");
         var source=Directory.Exists(fixtureClips)?MonoClip.Core.ClipLibrary.LatestClip(Path.Combine(fixtureClips,"MonoClip.GameFixture")):null;
         if(source==null)throw new Exception("run --game first to create a synthetic fixture clip");
+        if(args.Contains("--share-hold")) {
+            // Diagnostics: share the synthetic clip, print the link and log every request for N seconds.
+            int seconds=int.Parse(args[Array.IndexOf(args,"--share-hold")+1]);using var held=new MonoClip.Windows.Share.ClipShare();
+            if(args.Length>Array.IndexOf(args,"--share-hold")+2&&File.Exists(args[Array.IndexOf(args,"--share-hold")+2]))source=args[Array.IndexOf(args,"--share-hold")+2];
+            var sharing=held.ShareAsync(source,TimeSpan.FromMinutes(Math.Max(5,(seconds+59)/60)),null,new(false,"Test clip"));while(!sharing.IsCompleted){Application.DoEvents();Thread.Sleep(20);}
+            var link=sharing.GetAwaiter().GetResult();var srv=(MonoClip.Core.ClipShareServer)typeof(MonoClip.Windows.Share.ClipShare).GetField("server",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(held)!;
+            srv.Log=line=>Console.WriteLine($"{DateTime.Now:HH:mm:ss} {line}");Console.WriteLine("LINK "+link.Url);
+            var hold=System.Diagnostics.Stopwatch.StartNew();while(hold.Elapsed.TotalSeconds<seconds){Application.DoEvents();Thread.Sleep(50);}
+            Console.WriteLine("DONE");return 0;
+        }
+        if(args.Contains("--share-embed")) {
+            // Embed copy from a real remuxed clip (or a given MP4, optionally with a budget in MB): H.264 + AAC at most 30 fps, fast-start, near the budget.
+            var given=args.Length>Array.IndexOf(args,"--share-embed")+1?args[Array.IndexOf(args,"--share-embed")+1]:null;
+            long budget=args.Length>Array.IndexOf(args,"--share-embed")+2?long.Parse(args[Array.IndexOf(args,"--share-embed")+2])<<20:MonoClip.Core.SharePolicy.DefaultEmbedBytes;
+            var remuxed=Path.Combine(Path.GetTempPath(),"MonoClip-embedsrc-"+Guid.NewGuid()+".mp4");var target=Path.Combine(Path.GetTempPath(),"MonoClip-embed-"+Guid.NewGuid()+".mp4");
+            try {
+                var input=given!=null&&File.Exists(given)?given:remuxed;if(input==remuxed)MonoClip.Windows.Share.ClipRemux.ToFastStartMp4(source,remuxed);
+                var facts=MonoClip.Core.Mp4Info.Read(input)??throw new Exception("no mp4 info");var cpu=System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime;var timer=System.Diagnostics.Stopwatch.StartNew();
+                var way=MonoClip.Windows.Share.ClipEmbedCopy.Create(input,target,facts.Duration,budget);timer.Stop();int height=Math.Min(MonoClip.Core.SharePolicy.EmbedHeight(MonoClip.Core.SharePolicy.EmbedVideoBitrate(facts.Duration,budget)),facts.Height);
+                var copy=MonoClip.Core.Mp4Info.Read(target)??throw new Exception("no mp4 info for copy");long size=new FileInfo(target).Length;
+                var bytes=File.ReadAllBytes(target);int moov=bytes.AsSpan().IndexOf("moov"u8),mdat=bytes.AsSpan().IndexOf("mdat"u8);if(moov<0||mdat<0||moov>mdat)throw new Exception("copy is not fast-start");
+                if(Math.Abs(copy.Height-height)>2||Math.Abs(copy.Duration.TotalSeconds-facts.Duration.TotalSeconds)>0.5)throw new Exception($"unexpected copy {copy} from {facts}");
+                var probe=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ffprobe",$"-v error -show_entries stream=codec_name,avg_frame_rate -of csv=p=0 \"{target}\""){RedirectStandardOutput=true,UseShellExecute=false})!;var streams=probe.StandardOutput.ReadToEnd().Trim().Replace("\r","").Replace("\n"," ; ");probe.WaitForExit();
+                if(!streams.StartsWith("h264,")||!streams.Contains("aac"))throw new Exception("unexpected streams: "+streams);
+                var rate=streams.Split(',',';')[1].Split('/');if(double.Parse(rate[0])/double.Parse(rate[1])>30.5)throw new Exception("copy above 30 fps: "+streams);
+                if(size>budget*13/10&&facts.Duration.TotalSeconds<=60)throw new Exception($"copy too large: {size/1024} KB");
+                Console.WriteLine($"PASS embed copy {new FileInfo(input).Length/1024} KB {facts.Width}x{facts.Height} -> {size/1024} KB {copy.Width}x{copy.Height} {copy.Duration.TotalSeconds:0.0}s in {timer.ElapsedMilliseconds} ms, CPU {(System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime-cpu).TotalMilliseconds:0} ms via {way} ({streams})");return 0;
+            } finally { if(Environment.GetEnvironmentVariable("MONOCLIP_KEEP_EMBED") is {} keep&&File.Exists(target))File.Copy(target,keep,true); foreach(var f in new[]{remuxed,target})if(File.Exists(f))File.Delete(f); }
+        }
+        if(args.Contains("--share-preview")) {
+            // Preview image and page facts from a real remuxed clip (no tunnel involved).
+            var target=Path.Combine(Path.GetTempPath(),"MonoClip-preview-"+Guid.NewGuid()+".mp4");
+            try {
+                MonoClip.Windows.Share.ClipRemux.ToFastStartMp4(source,target);var facts=MonoClip.Core.Mp4Info.Read(target)??throw new Exception("no mp4 info");
+                if(facts.Width!=1920||facts.Height!=1080||facts.Duration.TotalSeconds is <4 or >7)throw new Exception("unexpected mp4 info "+facts);
+                var jpeg=MonoClip.Windows.Share.ClipThumbnail.CreateJpegAsync(target,1280,720,"Test clip").GetAwaiter().GetResult();
+                using var image=new Bitmap(new MemoryStream(jpeg));if(image.Width!=1280||image.Height!=720)throw new Exception("preview size "+image.Size);
+                int colored=0;for(int x=0;x<image.Width;x+=8)for(int y=0;y<image.Height;y+=8){var c=image.GetPixel(x,y);if(Math.Max(Math.Abs(c.R-c.G),Math.Max(Math.Abs(c.G-c.B),Math.Abs(c.R-c.B)))>40)colored++;}
+                if(colored<50)throw new Exception("preview looks like the placeholder, not a video frame ("+colored+" colored samples)");
+                Console.WriteLine($"PASS real preview: Windows thumbnail of the clip, {jpeg.Length/1024} KB JPEG, {colored} colored samples, {facts.Width}x{facts.Height} {facts.Duration.TotalSeconds:0.0}s");return 0;
+            } finally { if(File.Exists(target))File.Delete(target); }
+        }
         if(args.Contains("--share-remux")) {
             var target=Path.Combine(Path.GetTempPath(),"MonoClip-remux-"+Guid.NewGuid()+".mp4");
             try {
@@ -42,10 +129,17 @@ try {
         if(!info.Url.StartsWith("https://")||!info.Url.Contains(".trycloudflare.com/")||(info.ExpiresAt-DateTimeOffset.Now).TotalMinutes is <4.9 or >5.01)throw new Exception("unexpected share "+info);
         var local=Directory.EnumerateFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","share"),"*.mp4").Single();var expected=File.ReadAllBytes(local);
         using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(60)};
-        var got=http.GetAsync(info.Url).GetAwaiter().GetResult();var body=got.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        // The link is the player page: its preview tags must point at the clip and a real preview image.
+        var html=http.GetStringAsync(info.Url).GetAwaiter().GetResult();
+        string Tag(string property)=>System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Match(html,"property=\""+System.Text.RegularExpressions.Regex.Escape(property)+"\" content=\"([^\"]*)\"").Groups[1].Value);
+        var video=Tag("og:video");var preview=Tag("og:image");
+        if(!video.StartsWith(new Uri(info.Url).GetLeftPart(UriPartial.Authority))||Tag("og:video:type")!="video/mp4"||Tag("og:video:width")!="1920"||Tag("og:type")!="video.other")throw new Exception("page tags wrong: "+video);
+        var previewJpeg=http.GetByteArrayAsync(preview).GetAwaiter().GetResult();if(previewJpeg.Length<1000||previewJpeg[0]!=0xFF||previewJpeg[1]!=0xD8)throw new Exception("preview image missing");
+        Console.WriteLine($"INFO page {html.Length} bytes, preview {previewJpeg.Length/1024} KB, video {video}");
+        var got=http.GetAsync(video).GetAwaiter().GetResult();var body=got.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
         if((int)got.StatusCode!=200||got.Content.Headers.ContentType?.MediaType!="video/mp4"||!body.SequenceEqual(expected)){var tun=(MonoClip.Windows.Share.CloudflaredTunnel?)typeof(MonoClip.Windows.Share.ClipShare).GetField("tunnel",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(share);throw new Exception($"public link did not return the clip: {(int)got.StatusCode} {body.Length}/{expected.Length} {System.Text.Encoding.ASCII.GetString(body.Take(40).ToArray())} | "+string.Join(" | ",tun?.RecentLog.TakeLast(8)??["no tunnel"]));}
-        var range=new HttpRequestMessage(HttpMethod.Get,info.Url);range.Headers.Range=new(0,1023);var part=http.Send(range);if((int)part.StatusCode!=206)throw new Exception("range through tunnel: "+(int)part.StatusCode);
-        var guess=http.GetAsync(info.Url.Replace(info.Url.Split('/')[3],SharePolicyToken())).GetAwaiter().GetResult();if((int)guess.StatusCode!=404)throw new Exception("wrong token served: "+(int)guess.StatusCode);
+        var range=new HttpRequestMessage(HttpMethod.Get,video);range.Headers.Range=new(0,1023);var part=http.Send(range);if((int)part.StatusCode!=206)throw new Exception("range through tunnel: "+(int)part.StatusCode);
+        var guess=http.GetAsync(video.Replace(video.Split('/')[3],SharePolicyToken())).GetAwaiter().GetResult();if((int)guess.StatusCode!=404)throw new Exception("wrong token served: "+(int)guess.StatusCode);
         // Second share reuses the working tunnel: same host, new path, much faster; the first link stops working.
         var again=share.ShareAsync(source,TimeSpan.FromMinutes(5));var second=System.Diagnostics.Stopwatch.StartNew();
         while(!again.IsCompleted&&second.Elapsed.TotalSeconds<120){Application.DoEvents();Thread.Sleep(20);}

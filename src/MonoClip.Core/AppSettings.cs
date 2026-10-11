@@ -23,8 +23,12 @@ public sealed record AppSettings
     public int ShareMinutes { get; set; } = SharePolicy.DefaultMinutes;
     // Share every new clip right after saving and copy the link (advanced, off by default).
     public bool AutoShare { get; set; }
+    // Put the link of every new share on the clipboard (on by default); otherwise use "Copy link".
+    public bool CopyShareLink { get; set; } = true;
     // One subfolder per game/application (default) or all clips directly in the clip folder.
     public bool SortByApp { get; set; } = true;
+    // Share the MP4 itself instead of a player page with preview (advanced, off by default).
+    public bool DirectLink { get; set; }
     public string MicrophoneDevice { get; set; } = "default";
     public string DesktopDevice { get; set; } = "default";
     public void Validate()

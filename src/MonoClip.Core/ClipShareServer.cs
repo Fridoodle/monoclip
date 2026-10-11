@@ -4,20 +4,27 @@ using System.Security.Cryptography;
 using System.Text;
 namespace MonoClip.Core;
 
-// Serves exactly one video on loopback. The tunnel connects from this PC, so no inbound
+// The player page and preview image served next to a shared clip (see SharePage), plus the optional
+// smaller copy of the video that chat embeds play.
+public sealed record SharePageFiles(string PagePath, byte[] Html, string ImagePath, byte[] Jpeg, string? EmbedPath = null, string? EmbedFile = null);
+// Serves exactly one video (plus its page and preview image) on loopback. The tunnel connects from this PC, so no inbound
 // firewall rule, port forwarding or admin rights are needed, and the LAN never sees the port.
 public sealed class ClipShareServer : IDisposable
 {
     const int MaxHeaderBytes = 8192;
     static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
     // The clip currently served. Swapped atomically so one server (and tunnel) can serve clip after clip.
-    sealed record Route(string File, byte[] Path, string RequestPath, int CacheSeconds, bool Ready);
+    sealed record Route(string File, byte[] Path, string RequestPath, int CacheSeconds, bool Ready, SharePageFiles? Page = null);
     volatile Route? route;
     readonly TcpListener listener = new(IPAddress.Loopback, 0); readonly CancellationTokenSource stop = new();
     readonly SemaphoreSlim slots; readonly HashSet<TcpClient> clients = []; long bytesSent; bool disposed;
     public string RequestPath => route?.RequestPath ?? "";
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     public long BytesSent => Interlocked.Read(ref bytesSent);
+    // Optional request log for diagnostics: method, path, user agent and range of every request.
+    public Action<string>? Log { get; set; }
+    // Bytes and time of every video response that was sent completely (used to estimate the upload speed).
+    public Action<long, TimeSpan>? Sent { get; set; }
     // False while the file is still being written: requests get 503 so the tunnel can start in parallel.
     public bool Ready { get => route?.Ready == true; set { if (route is { } r) route = r with { Ready = value }; } }
     public ClipShareServer(int maxConnections = SharePolicy.MaxConnections) => slots = new(maxConnections, maxConnections);
@@ -25,6 +32,8 @@ public sealed class ClipShareServer : IDisposable
     // Serves this file at this path from now on; every other path, including the previous clip's, is 404.
     public void Publish(string file, string requestPath, int cacheSeconds, bool ready = true) => route = new(file, Encoding.UTF8.GetBytes(requestPath), requestPath, cacheSeconds, ready);
     public void Unpublish() => route = null;
+    // Adds the player page and preview image for the clip that is currently published.
+    public void AttachPage(SharePageFiles page) { if (route is { } r) route = r with { Page = page }; }
     public void Start() { listener.Start(); _ = AcceptAsync(); }
     async Task AcceptAsync()
     {
@@ -76,18 +85,38 @@ public sealed class ClipShareServer : IDisposable
         // Requests with a body are never valid here; refusing them keeps the stream in sync.
         if (headers.ContainsKey("Transfer-Encoding") || (headers.TryGetValue("Content-Length", out var body) && body != "0")) { await WriteHead(stream, "400 Bad Request", [], 0, false); return false; }
         if (request[0] is not ("GET" or "HEAD")) { await WriteHead(stream, "405 Method Not Allowed", [("Allow", "GET, HEAD")], 0, false); return false; }
+        Log?.Invoke($"{request[0]} {request[1]} | UA: {headers.GetValueOrDefault("User-Agent")} | Range: {headers.GetValueOrDefault("Range")}");
         var target = Encoding.UTF8.GetBytes(request[1].Split('?')[0]);
         var current = route;
+        bool Is(string path) => CryptographicOperations.FixedTimeEquals(target, Encoding.UTF8.GetBytes(path));
+        if (current?.Page is { } page && current.Ready)
+        {
+            if (Is(page.PagePath) || Is(page.PagePath + "/")) return await SendBytes(stream, request[0], page.Html, "text/html; charset=utf-8", current.CacheSeconds, keepAlive);
+            if (Is(page.ImagePath)) return await SendBytes(stream, request[0], page.Jpeg, "image/jpeg", current.CacheSeconds, keepAlive);
+            if (page.EmbedPath != null && page.EmbedFile != null && Is(page.EmbedPath) && File.Exists(page.EmbedFile)) return await SendVideo(stream, request[0], headers, page.EmbedFile, current.CacheSeconds, keepAlive);
+        }
         if (current == null || !CryptographicOperations.FixedTimeEquals(target, current.Path)) { await WriteHead(stream, "404 Not Found", [], 0, keepAlive); return keepAlive; }
         if (!current.Ready || !File.Exists(current.File)) { await WriteHead(stream, "503 Service Unavailable", [("Retry-After", "1")], 0, keepAlive); return keepAlive; }
-        long length = new FileInfo(current.File).Length;
+        return await SendVideo(stream, request[0], headers, current.File, current.CacheSeconds, keepAlive);
+    }
+    async Task<bool> SendVideo(NetworkStream stream, string method, Dictionary<string, string> headers, string file, int cacheSeconds, bool keepAlive)
+    {
+        long length = new FileInfo(file).Length;
         var range = ParseRange(headers.GetValueOrDefault("Range"), length, out bool unsatisfiable);
         if (unsatisfiable) { await WriteHead(stream, "416 Range Not Satisfiable", [("Content-Range", $"bytes */{length}")], 0, keepAlive); return keepAlive; }
         var (start, last) = range ?? (0, length - 1); long count = length == 0 ? 0 : last - start + 1;
-        List<(string, string)> extra = [("Content-Type", "video/mp4"), ("Accept-Ranges", "bytes"), ("Cache-Control", $"public, max-age={current.CacheSeconds}"), ("X-Content-Type-Options", "nosniff"), ("Content-Disposition", "inline")];
+        List<(string, string)> extra = [("Content-Type", "video/mp4"), ("Accept-Ranges", "bytes"), ("Cache-Control", $"public, max-age={cacheSeconds}"), ("X-Content-Type-Options", "nosniff"), ("Content-Disposition", "inline")];
         if (range != null) extra.Add(("Content-Range", $"bytes {start}-{last}/{length}"));
         await WriteHead(stream, range != null ? "206 Partial Content" : "200 OK", extra, count, keepAlive);
-        if (request[0] == "GET" && count > 0) await SendFile(stream, current.File, start, count);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try { if (method == "GET" && count > 0) await SendFile(stream, file, start, count); Log?.Invoke($"  sent {count / 1024} KB of {length / 1024} KB in {clock.ElapsedMilliseconds} ms"); if (method == "GET") Sent?.Invoke(count, clock.Elapsed); }
+        catch (Exception e) when (e is IOException or SocketException or OperationCanceledException) { Log?.Invoke($"  aborted by client after {clock.ElapsedMilliseconds} ms"); throw; }
+        return keepAlive;
+    }
+    async Task<bool> SendBytes(NetworkStream stream, string method, byte[] body, string type, int cacheSeconds, bool keepAlive)
+    {
+        await WriteHead(stream, "200 OK", [("Content-Type", type), ("Cache-Control", $"public, max-age={cacheSeconds}"), ("X-Content-Type-Options", "nosniff")], body.Length, keepAlive);
+        if (method == "GET") { await stream.WriteAsync(body, stop.Token); Interlocked.Add(ref bytesSent, body.Length); }
         return keepAlive;
     }
     async Task SendFile(NetworkStream stream, string file, long start, long count)
