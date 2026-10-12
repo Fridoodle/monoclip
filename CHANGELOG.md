@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+
+- Capture follows the active window (the one you are tabbed into) instead of the window under the mouse, so games played with a controller are captured too. The desktop is captured on the monitor of the active window; MonoClip's own windows do not take over the capture.
+
 ## 1.1.1
 
 - The tray entry is now **Export clip** (settings: **Export clip**). It opens the editor with the last clip and stays available while a link is online.

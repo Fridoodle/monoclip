@@ -22,6 +22,7 @@ public sealed class ClipEngine : IClipEngine
     public int TotalFrames => output == IntPtr.Zero ? 0 : Obs.obs_output_get_total_frames(output);
     public int DroppedFrames => output == IntPtr.Zero ? 0 : Obs.obs_output_get_frames_dropped(output);
     public event EventHandler? StatusChanged; public event EventHandler<ClipSavedEventArgs>? ClipSaved;
+    static readonly string OwnExecutable = Path.GetFileName(Environment.ProcessPath ?? "MonoClip.exe");
     public ClipEngine() { _ = dispatcher.Handle; timer.Tick += (_, _) => Tick(); }
     void SetStatus(string text) { Status = text; StatusChanged?.Invoke(this, EventArgs.Empty); }
     static IntPtr Require(IntPtr ptr, string name) => ptr == IntPtr.Zero ? throw new InvalidOperationException(name + " could not be created.") : ptr;
@@ -110,21 +111,22 @@ public sealed class ClipEngine : IClipEngine
             if (!IsRunning) { timer.Stop(); SetStatus("Capture stopped unexpectedly. " + (output == IntPtr.Zero ? "" : Obs.Str(Obs.obs_output_get_last_error(output)))); return; }
             var cd = new Obs.CallData(); bool nowHooked = false; string exe = "", title = "";
             try { Obs.proc_handler_call(Obs.obs_source_get_proc_handler(game), "get_hooked", ref cd); Obs.calldata_get_data(ref cd, "hooked", out var value, 1); nowHooked = value != 0; if (nowHooked) { Obs.calldata_get_string(ref cd, "executable", out var p); exe = Obs.Str(p); Obs.calldata_get_string(ref cd, "title", out p); title = Obs.Str(p); } } finally { Obs.bfree(cd.Stack); }
-            hooked = nowHooked; FollowCursor(exe, title);
+            hooked = nowHooked; FollowActiveWindow(exe, title);
             bool slowSave;
             lock (saveGate) slowSave = pending is not null && DateTime.UtcNow - pending.At > TimeSpan.FromSeconds(20);
             if (slowSave && !Status.StartsWith("Saving the clip is taking")) SetStatus("Saving the clip is taking too long. See capture.log.");
         }
         catch (Exception e) { SetStatus("Error: " + e.Message); }
     }
-    // Capture what the mouse is over: the hooked game, any other window, or the monitor for the desktop.
-    void FollowCursor(string gameExe, string gameTitle)
+    // Capture the window the user is in (focus, not the mouse, so controller play works): the hooked game, any
+    // other window, or the monitor for the desktop. No active window for a moment keeps the current capture.
+    void FollowActiveWindow(string gameExe, string gameTitle)
     {
-        var (handle, info) = ForegroundTracker.CursorWindow();
-        var kind = CaptureTargetPolicy.Decide(info, hooked ? Path.GetFileName(gameExe) : "");
+        var (handle, info) = ForegroundTracker.ActiveWindow();
+        var kind = handle == IntPtr.Zero ? CaptureKind.Keep : CaptureTargetPolicy.Decide(info, hooked ? Path.GetFileName(gameExe) : "", OwnExecutable);
         if (kind != CaptureKind.Keep && (kind != candidate || (kind == CaptureKind.Window && handle != candidateHandle))) { candidate = kind; candidateHandle = handle; candidateInfo = info; candidateTicks = 0; }
         else candidateTicks++;
-        // Confirm for one more tick so sweeping the mouse across windows does not thrash capture.
+        // Confirm for one more tick so quickly tabbing through windows does not thrash capture.
         if (candidateTicks < 1) { if (shownItem == desktopItem) ShowDesktop(); return; }
         switch (candidate)
         {

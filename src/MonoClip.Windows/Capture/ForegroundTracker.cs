@@ -11,7 +11,6 @@ internal static class ForegroundTracker
     const uint GaRoot = 2, ProcessQueryLimitedInformation = 0x1000, DwmwaCloaked = 14; const int GwlExStyle = -20; const long WsExToolWindow = 0x80;
     [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
-    [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect rect);
@@ -27,10 +26,14 @@ internal static class ForegroundTracker
     // Polled every 250 ms: cache what never changes for a monitor or window.
     static readonly Dictionary<string, string> monitorIds = [];
     static IntPtr cachedWindow; static uint cachedProcess; static WindowInfo? cachedInfo;
-    // Monitor under the mouse cursor (the cursor marks what the user is looking at).
+    // Monitor of the active window. The desktop background spans every monitor, so there (and without an
+    // active window) the mouse cursor marks the monitor: the user just clicked it.
     public static (string Id, string Name) Monitor()
     {
-        var screen = GetCursorPos(out var p) ? Screen.FromPoint(new System.Drawing.Point(p.X, p.Y)) : Screen.PrimaryScreen!;
+        var active = GetForegroundWindow(); if (active != IntPtr.Zero) active = GetAncestor(active, GaRoot);
+        Screen screen;
+        if (active != IntPtr.Zero && !CaptureTargetPolicy.IsDesktopBackground(ClassName(active))) screen = Screen.FromHandle(active);
+        else screen = GetCursorPos(out var p) ? Screen.FromPoint(new System.Drawing.Point(p.X, p.Y)) : Screen.PrimaryScreen!;
         if (!monitorIds.TryGetValue(screen.DeviceName, out var id))
         {
             var device = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
@@ -40,11 +43,11 @@ internal static class ForegroundTracker
         return (id, screen.DeviceName);
     }
     internal static string StableMonitorId(string? deviceId,string displayName)=>string.IsNullOrWhiteSpace(deviceId)?displayName:deviceId;
-    // Top-level window under the mouse cursor, or null when there is none.
-    public static (IntPtr Handle, WindowInfo? Info) CursorWindow()
+    // The window the user is in (the foreground window: keyboard and controller input go there), or null when
+    // there is none, e.g. for a moment while switching windows.
+    public static (IntPtr Handle, WindowInfo? Info) ActiveWindow()
     {
-        if (!GetCursorPos(out var p)) return (IntPtr.Zero, null);
-        var h = WindowFromPoint(p); if (h != IntPtr.Zero) h = GetAncestor(h, GaRoot);
+        var h = GetForegroundWindow(); if (h != IntPtr.Zero) h = GetAncestor(h, GaRoot);
         if (h == IntPtr.Zero || !IsWindowVisible(h) || Cloaked(h)) return (IntPtr.Zero, null);
         // Class, executable and style belong to the window; only re-read them for a new window
         // (or a reused handle in another process). The size is cheap and may change.
@@ -54,6 +57,7 @@ internal static class ForegroundTracker
         return (h, cachedInfo);
     }
     static bool Cloaked(IntPtr h) => DwmGetWindowAttribute(h, DwmwaCloaked, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
+    static string ClassName(IntPtr h) { var cls = new StringBuilder(256); GetClassName(h, cls, cls.Capacity); return cls.ToString(); }
     static WindowInfo Describe(IntPtr h)
     {
         var cls = new StringBuilder(256); GetClassName(h, cls, cls.Capacity);

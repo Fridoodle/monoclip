@@ -6,7 +6,7 @@ Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GP
 
 ## Features
 
-- Captures what the cursor is over: the hooked game, otherwise the window under the cursor, or the monitor when over the desktop.
+- Captures the active window: the hooked game, otherwise the window you are tabbed into, or the monitor when the desktop is active. Works with a controller; the mouse position does not matter.
 - 720p–2160p at 30/60/120 FPS, 5–1000 s clips, three quality presets.
 - Global hotkey (default `Ctrl+Shift+F9`).
 - Separate desktop and microphone tracks plus a mixed track.
