@@ -235,9 +235,10 @@ try {
         if(!File.Exists(fixture))throw new Exception("Direct3D game fixture missing");
         using var game=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fixture,args.Contains("--exclusive")?"--exclusive":""){UseShellExecute=false})!;
         try {
-            // Capture follows the mouse: put the cursor over the fixture like a player would.
+            // Capture follows the active window, not the mouse: focus the fixture like a player tabbing in, and
+            // park the cursor in a corner of the virtual screen as if a controller were used.
             for(int i=0;i<100&&game.MainWindowHandle==IntPtr.Zero;i++){Thread.Sleep(50);game.Refresh();}
-            var bounds=Screen.FromHandle(game.MainWindowHandle).Bounds;Cursor.Position=new System.Drawing.Point(bounds.Left+bounds.Width/2,bounds.Top+bounds.Height/2);
+            SetForegroundWindow(game.MainWindowHandle);var virtualScreen=SystemInformation.VirtualScreen;Cursor.Position=new System.Drawing.Point(virtualScreen.Right-1,virtualScreen.Bottom-1);
             using var engine=new ClipEngine();var s=new MonoClip.Core.AppSettings{ClipSeconds=5,DesktopAudio=false,Microphone=false,ClipsDirectory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MonoClip","GameVerificationClips")};
             MonoClip.Core.ClipRecord? clip=null;engine.ClipSaved+=(_,e)=>clip=e.Clip;engine.Start(s);var clock=System.Diagnostics.Stopwatch.StartNew();bool saved=false;
             while(clock.Elapsed.TotalSeconds<20&&clip==null){Application.DoEvents();Thread.Sleep(25);if(clock.Elapsed.TotalSeconds>10&&!saved){if(!engine.CaptureTarget.StartsWith("Game"))throw new Exception("Game not auto-detected: "+engine.CaptureTarget+" "+engine.Status);engine.SaveClip();saved=true;}}
@@ -280,6 +281,7 @@ try {
 // MonoClip-like test clip: 6 s of 720p30 with a keyframe per second and three named AAC tracks at different pitches
 // (mix 440 Hz, desktop 660 Hz, microphone 880 Hz) to tell them apart.
 static void TestClip(string mkv)=>Run("ffmpeg",$"-v error -f lavfi -i testsrc2=s=1280x720:r=30:d=6 -f lavfi -i sine=440:d=6 -f lavfi -i sine=660:d=6 -f lavfi -i sine=880:d=6 -map 0 -map 1 -map 2 -map 3 -c:v libx264 -g 30 -bf 0 -c:a aac -metadata:s:a:0 title=\"Playback mix\" -metadata:s:a:1 title=Desktop -metadata:s:a:2 title=Microphone \"{mkv}\"");
+[DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
 // Runs a tool (ffmpeg/ffprobe) and returns its output; a failure throws with its error text.
 static string Run(string exe,string arguments){var p=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe,arguments){RedirectStandardOutput=true,RedirectStandardError=true,UseShellExecute=false})!;var errors=p.StandardError.ReadToEndAsync();var output=p.StandardOutput.ReadToEnd();p.WaitForExit();if(p.ExitCode!=0)throw new Exception(exe+" failed: "+errors.Result);return output;}
 }

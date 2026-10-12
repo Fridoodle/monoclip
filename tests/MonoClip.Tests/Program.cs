@@ -188,6 +188,10 @@ Test("cursor target: hooked game, other window, desktop or keep",()=>{
     Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("WindowsForms10.Window.808","MonoClip.exe",tool:true),""));
     Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("Popup","app.exe",w:40,h:20),""));
     Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("Protected","",w:800,h:600),""));
+    // MonoClip's own settings or editor getting focus keeps capturing the game or window from before.
+    Equal(CaptureKind.Keep,CaptureTargetPolicy.Decide(W("WindowsForms10.Window.8.app","MonoClip.exe"),"game.exe","MonoClip.exe"));
+    Equal(CaptureKind.Window,CaptureTargetPolicy.Decide(W("WindowsForms10.Window.8.app","MonoClip.exe"),"game.exe"));
+    True(CaptureTargetPolicy.IsDesktopBackground("WorkerW")&&CaptureTargetPolicy.IsDesktopBackground("Progman")&&!CaptureTargetPolicy.IsDesktopBackground("Shell_SecondaryTrayWnd"),"desktop background classes");
 });
 Test("window selector escapes separators like libobs",()=>{
     Equal("Server#3A #22general | Discord:Chrome_WidgetWin_1:Discord.exe",CaptureTargetPolicy.EncodeWindow(new("Chrome_WidgetWin_1","Server: #general | Discord","Discord.exe",false,800,600)));
