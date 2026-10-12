@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- The tray entry is now **Export clip** (settings: **Export clip**). It opens the editor with the last clip and stays available while a link is online.
+- **Choose clip…** (bottom left) opens the clip folder to pick another clip or any MKV/MP4; dropping a file on the editor switches to it as well. Without any saved clip the editor opens empty, ready to choose one.
+- More room in the settings (defaults unchanged): clips up to 1000 s (was 300 s), links online up to 2 hours (was 30 min), files up to 1 GB can be shared or exported (was 500 MB).
+
 ## 1.1.0
 
 - **Quick share** (as before) and new **Export…**: a small editor to watch the clip, drag the start and end of the timeline to trim it and switch off the game/desktop audio or the microphone, then **Share** it or **Save…** it as an MP4 wherever you like (the last folder is remembered). Dropped files and **Export a file…** open the editor too; automatic sharing stays quick.

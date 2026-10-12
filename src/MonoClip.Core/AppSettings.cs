@@ -10,6 +10,8 @@ public sealed record AppSettings
     public int Height { get; set; } = 1080;
     public int Fps { get; set; } = 60;
     public int ClipSeconds { get; set; } = 30;
+    // Long buffers are allowed; the replay buffer holds the whole length in RAM (see CapturePolicy.BufferMegabytes).
+    public const int MinClipSeconds = 5, MaxClipSeconds = 1000;
     public QualityPreset Quality { get; set; } = QualityPreset.Balanced;
     public string Hotkey { get; set; } = "Ctrl+Shift+F9";
     public string ClipsDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip");
@@ -43,7 +45,7 @@ public sealed record AppSettings
         if (string.IsNullOrWhiteSpace(Hotkey)) throw new ArgumentException("Hotkey is required.");
         if (string.IsNullOrWhiteSpace(ClipsDirectory) || !Path.IsPathFullyQualified(ClipsDirectory) || ClipsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0) throw new ArgumentException("Clip folder must be a valid absolute path.");
         if (string.IsNullOrWhiteSpace(MicrophoneDevice) || string.IsNullOrWhiteSpace(DesktopDevice)) throw new ArgumentException("Audio devices must not be empty.");
-        if (ClipSeconds is < 5 or > 300) throw new ArgumentException("Clip duration must be between 5 and 300 seconds.");
+        if (ClipSeconds is < MinClipSeconds or > MaxClipSeconds) throw new ArgumentException($"Clip duration must be between {MinClipSeconds} and {MaxClipSeconds} seconds.");
         if (ShareMinutes is < SharePolicy.MinMinutes or > SharePolicy.MaxMinutes) throw new ArgumentException($"Link lifetime must be {SharePolicy.MinMinutes}-{SharePolicy.MaxMinutes} minutes.");
     }
 }

@@ -5,11 +5,11 @@ namespace MonoClip.Core;
 public static partial class SharePolicy
 {
     // Short on purpose: friends watch it now, then the home upload is free again.
-    public const int DefaultMinutes = 15, MinMinutes = 5, MaxMinutes = 30;
+    public const int DefaultMinutes = 15, MinMinutes = 5, MaxMinutes = 120;
     // A browser or Discord's proxy opens one or two connections per viewer.
     public const int MaxConnections = 6;
     // Manually chosen files: only real clips, and nothing that would tie up the upload for long.
-    public const int MaxShareMegabytes = 500;
+    public const int MaxShareMegabytes = 1024;
     // Discord shows a player only if the whole video has arrived about 10 s after it fetched the page,
     // whatever the size (done after 8-9 s worked for 20 and 40 MB; after 11-14 s failed for 20, 29 and 50 MB).
     // Discord itself sometimes waits up to 5 s before it starts the video download. So the embed video gets

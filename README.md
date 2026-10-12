@@ -7,10 +7,10 @@ Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GP
 ## Features
 
 - Captures what the cursor is over: the hooked game, otherwise the window under the cursor, or the monitor when over the desktop.
-- 720p–2160p at 30/60/120 FPS, 5–300 s clips, three quality presets.
+- 720p–2160p at 30/60/120 FPS, 5–1000 s clips, three quality presets.
 - Global hotkey (default `Ctrl+Shift+F9`).
 - Separate desktop and microphone tracks plus a mixed track.
-- Share a clip as a temporary link (5–30 min) without port forwarding, accounts or admin rights.
+- Share a clip as a temporary link (5 min–2 h) without port forwarding, accounts or admin rights.
 - Sound cues instead of notifications; tray icon shows the current state.
 - Portable: one ZIP, no installer, no telemetry.
 
@@ -54,7 +54,7 @@ Clips are MKV files sorted into one folder per game (`Desktop` for everything el
 
 **Quick share** (tray or settings) shares the last clip as it is, creates a link and copies it to the clipboard (unless **Copy new share links to the clipboard** is off; **Copy link** always works). With **Share new clips automatically** this happens after every clip.
 
-**Export…** opens a small editor: watch the clip, drag the start and end handles to trim it and switch off the game/desktop audio or the microphone (when both were recorded), then **Share** it or **Save…** it as an MP4 to a folder of your choice. Trimming is lossless and instant, so the clip can start up to a second before the start mark. To open any MKV/MP4 up to 500 MB, drag it onto the settings window or use **Export a file…**.
+**Export clip** opens a small editor with the last clip: watch it, drag the start and end handles to trim it and switch off the game/desktop audio or the microphone (when both were recorded), then **Share** it or **Save…** it as an MP4 to a folder of your choice. **Choose clip…** or dropping a file on the editor switches to another clip. Trimming is lossless and instant, so the clip can start up to a second before the start mark. To open any MKV/MP4 up to 1 GB, drag it onto the settings window or use **Export a file…**.
 
 - The link opens a small player page with a preview image (Open Graph tags, like Medal or YouTube links). **Link to the video file instead of a player page** (advanced) shares the MP4 directly.
 - Discord shows a player only if the whole video arrives within about 10 seconds. MonoClip measures your upload while sharing (stored in `%LOCALAPPDATA%\MonoClip\upload-speed.txt`) and gives Discord a copy that uploads in about 4 seconds: up to 1080p, at most 40 MB, 10 MB before the first measurement. Clips that already fit are embedded as they are; the page in a browser always plays the original.
