@@ -36,13 +36,13 @@ public sealed class SettingsForm : Form
         status.AutoSize = true; status.Font = new Font("Segoe UI Semibold", 11); Full(status); target.AutoSize = true; target.ForeColor = Muted; Full(target);
         var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = new Padding(0, 10, 0, 4) };
         StyleButton(toggleButton); toggleButton.Click += (_, _) => Run(toggle); StyleButton(clipButton); clipButton.Text = "Save clip"; clipButton.Click += (_, _) => Run(saveClip); actions.Controls.Add(toggleButton); actions.Controls.Add(clipButton);
-        StyleButton(shareButton); shareButton.AutoSizeMode = AutoSizeMode.GrowAndShrink; shareButton.Visible = false; actions.Controls.Add(shareButton); StyleButton(editButton); editButton.Text = "Export…"; editButton.Visible = false; actions.Controls.Add(editButton); StyleButton(copyLinkButton); copyLinkButton.Text = "Copy link"; copyLinkButton.Visible = false; actions.Controls.Add(copyLinkButton); Full(actions);
+        StyleButton(shareButton); shareButton.AutoSizeMode = AutoSizeMode.GrowAndShrink; shareButton.Visible = false; actions.Controls.Add(shareButton); StyleButton(editButton); editButton.Text = "Export clip"; editButton.Visible = false; actions.Controls.Add(editButton); StyleButton(copyLinkButton); copyLinkButton.Text = "Copy link"; copyLinkButton.Visible = false; actions.Controls.Add(copyLinkButton); Full(actions);
         shareStatus.AutoSize = true; shareStatus.ForeColor = Muted; shareStatus.Visible = false; shareStatus.Margin = new Padding(0, 2, 0, 4); Full(shareStatus); shareTicker.Tick += (_, _) => UpdateShareControls();
         Check(advanced, "Advanced settings", settings.AdvancedMode); advanced.Margin = new Padding(0, 10, 0, 0); advanced.CheckedChanged += (_, _) => { ApplyMode(); Run(() => { var next = original with { AdvancedMode = advanced.Checked }; saveSettings(next); original = next; }); };
         Section("CAPTURE");
         StyleCombo(resolution); resolution.Items.AddRange(new object[] { "1280 × 720", "1920 × 1080", "2560 × 1440", "3840 × 2160" }); resolution.SelectedIndex = settings.Width switch { 1280 => 0, 1920 => 1, 2560 => 2, _ => 3 }; Row("Resolution", resolution, true);
         StyleCombo(fps); fps.Items.AddRange(new object[] { 30, 60, 120 }); fps.SelectedItem = settings.Fps; Row("Frame rate", fps, true);
-        duration.Minimum = 5; duration.Maximum = 300; duration.Value = settings.ClipSeconds; duration.BackColor = Black; duration.ForeColor = White; duration.BorderStyle = BorderStyle.FixedSingle; Row("Clip length (s)", duration);
+        duration.Minimum = AppSettings.MinClipSeconds; duration.Maximum = AppSettings.MaxClipSeconds; duration.Value = settings.ClipSeconds; duration.BackColor = Black; duration.ForeColor = White; duration.BorderStyle = BorderStyle.FixedSingle; Row("Clip length (s)", duration);
         hotkey.ReadOnly = true; StyleText(hotkey); hotkey.Text = settings.Hotkey; hotkey.AccessibleName = "Clip hotkey";
         hotkey.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); hotkey.Text = new Hotkey(mods, e.KeyCode).ToString(); }; Row("Hotkey", hotkey);
         quality.BackColor = Black; quality.ForeColor = White; quality.Value = (int)settings.Quality; quality.AccessibleName = "Quality"; quality.AccessibleDescription = quality.ValueText; quality.MinimumSize = new Size(0, quality.GetPreferredSize(Size.Empty).Height); quality.ValueChanged += (_, _) => UpdateBudget(); Row("Quality", quality, true);
@@ -63,7 +63,7 @@ public sealed class SettingsForm : Form
         Check(copyLink, "Copy new share links to the clipboard", settings.CopyShareLink, true);
         Check(directLink, "Link to the video file instead of a player page", settings.DirectLink, true);
         shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.Value = settings.ShareMinutes; shareMinutes.BackColor = Black; shareMinutes.ForeColor = White; shareMinutes.BorderStyle = BorderStyle.FixedSingle; shareMinutes.AccessibleName = "Link lifetime in minutes"; Row("Link lifetime (min)", shareMinutes, true);
-        Full(new Label { Text = $"MKV or MP4, up to {SharePolicy.MaxShareMegabytes} MB.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 2, 0, 4) }, true);
+        Full(new Label { Text = $"MKV or MP4, up to {SharePolicy.MaxShareMegabytes / 1024} GB.", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 2, 0, 4) }, true);
         feedback.AutoSize = true; feedback.ForeColor = Muted; feedback.Margin = new Padding(0, 8, 0, 0); Full(feedback);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } }; Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); }; VisibleChanged += (_, _) => { if (Visible) { WindowState = FormWindowState.Normal; RefreshGames(); UpdateStatus(); } };
         scroll.ClientSizeChanged += (_, _) => Relayout(); // WinForms rescales every control (margins, padding, sizes) after this event. Re-arranging inside it
@@ -219,7 +219,7 @@ public sealed class SettingsForm : Form
             shareButton.Text = "Stop sharing"; shareStatus.Text = $"Shared · {left} min left (until {c.ExpiresAt:HH:mm}) · {new Uri(c.Url).Host}";
         }
         else { shareButton.Text = $"Quick share ({original.ShareMinutes} min)"; shareStatus.Text = ""; }
-        editButton.Visible = sharer.Current == null && !sharer.IsStarting;
+        editButton.Visible = true;
         copyLinkButton.Visible = sharer.Current != null; shareStatus.Visible = shareStatus.Text.Length > 0;
     }
     internal static Icon? AppIcon()

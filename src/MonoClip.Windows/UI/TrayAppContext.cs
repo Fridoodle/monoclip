@@ -32,7 +32,7 @@ public sealed class TrayAppContext : ApplicationContext
         var menu = new ContextMenuStrip { BackColor = Color.FromArgb(16, 16, 16), ForeColor = Color.White, ShowImageMargin = false, Renderer = new ToolStripProfessionalRenderer(new MonoMenuColors()) };
         toggleItem = new ToolStripMenuItem("Start buffer", null, (_, _) => Run(Toggle)); menu.Items.Add(toggleItem); saveItem = new ToolStripMenuItem("Save clip", null, (_, _) => Run(engine.SaveClip)); menu.Items.Add(saveItem);
         shareItem = new ToolStripMenuItem($"Quick share last clip ({settings.ShareMinutes} min)", null, (_, _) => ToggleShare()) { Visible = sharer != null }; menu.Items.Add(shareItem);
-        editItem = new ToolStripMenuItem("Export last clip…", null, (_, _) => EditLastClip()) { Visible = sharer != null }; menu.Items.Add(editItem); copyLinkItem = new ToolStripMenuItem("Copy link", null, (_, _) => Run(CopyShareLink)) { Visible = false }; menu.Items.Add(copyLinkItem); menu.Opening += (_, _) => UpdateShareItems();
+        editItem = new ToolStripMenuItem("Export clip", null, (_, _) => EditLastClip()); menu.Items.Add(editItem); copyLinkItem = new ToolStripMenuItem("Copy link", null, (_, _) => Run(CopyShareLink)) { Visible = false }; menu.Items.Add(copyLinkItem); menu.Opening += (_, _) => UpdateShareItems();
         menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Settings", null, (_, _) => ShowSettings()); menu.Items.Add("Open clip folder", null, (_, _) => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip))); menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Exit", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettings();
         hotkeys = new(() => Run(engine.SaveClip));
@@ -123,37 +123,38 @@ public sealed class TrayAppContext : ApplicationContext
         if (clip == null) Fail("No clip saved yet.");
         return clip;
     }
-    void EditLastClip() { if (ClipToShare() is { } clip) Export(clip, chosen: false); }
-    // What the export editor decided: the edit, and a file to save it to (null: share it).
-    internal sealed record ExportChoice(ClipEdit Edit, string? SavePath);
-    // Replaces the export editor in tests: returns the choice, or null when cancelled.
-    internal Func<string, ExportChoice?>? EditClip { get; set; }
+    // "Export clip" opens the editor with the last clip; without one it opens empty, ready to choose a clip.
+    void EditLastClip() => Export(lastClip != null && File.Exists(lastClip) ? lastClip : ClipLibrary.LatestClip(settings.ClipsDirectory), chosen: false);
+    // What the export editor decided: the edit, a file to save it to (null: share it) and the clip it applies to
+    // (the user can switch clips in the editor).
+    internal sealed record ExportChoice(ClipEdit Edit, string? SavePath, string? Clip = null);
+    // Replaces the export editor in tests: gets the starting clip, returns the choice or null when cancelled.
+    internal Func<string?, ExportChoice?>? EditClip { get; set; }
     ShareEditorForm? editor;
-    // "Export…": the editor trims the clip and picks its audio, then the clip is shared or saved as an MP4.
-    // A file Windows cannot open for editing is shared as it is.
-    internal void Export(string clip, bool chosen)
+    // The editor trims the clip and picks its audio, then the clip is shared or saved as an MP4. A clip chosen
+    // while the editor is open (dropped on the settings window) replaces the one in it.
+    internal void Export(string? clip, bool chosen)
     {
-        if (sharer == null) return;
-        if (editor != null) { editor.Activate(); return; }
-        if (chosen) { try { SharePolicy.CheckShareable(clip); } catch (ArgumentException e) { Fail(e.Message); return; } }
+        if (editor != null) { if (clip != null) editor.Open(clip); editor.Activate(); return; }
+        if (chosen && clip != null) { try { SharePolicy.CheckShareable(clip); } catch (ArgumentException e) { Fail(e.Message); return; } }
         ExportChoice? choice; TimeSpan duration = TimeSpan.MaxValue; int? defaultTrack = 0;
-        if (EditClip != null) choice = EditClip(clip);
+        if (EditClip != null) choice = EditClip(clip) is { } c ? c with { Clip = c.Clip ?? clip } : null;
         else
         {
-            ClipTrim.Media media;
-            try { media = ClipTrim.Probe(clip); }
-            catch (Exception e) when (e is InvalidOperationException or InvalidDataException) { form?.Feedback("This file cannot be edited; sharing it as it is."); _ = ShareClip(clip, chosen: false); return; }
-            using (editor = new ShareEditorForm(clip, ClipTitle(clip), media, new FileInfo(clip).Length, settings.ExportFolder()))
+            using (editor = new ShareEditorForm(clip, settings.ClipsDirectory, settings.ExportFolder(), ClipTitle))
             {
-                try { choice = editor.ShowDialog() == DialogResult.OK && editor.Edit is { } edit ? new(edit, editor.SavePath) : null; }
+                try
+                {
+                    choice = editor.ShowDialog() == DialogResult.OK && editor.Edit is { } edit && editor.Clip is { } picked ? new(edit, editor.SavePath, picked) : null;
+                    if (editor.Media is { } media) { duration = media.Duration; defaultTrack = ClipAudio.DefaultTrack(media.AudioTracks); }
+                }
                 finally { editor = null; }
             }
-            duration = media.Duration; defaultTrack = ClipAudio.DefaultTrack(media.AudioTracks);
         }
-        if (choice == null) return;
-        if (choice.SavePath != null) { _ = SaveEdited(clip, choice.Edit, choice.SavePath); return; }
+        if (choice?.Clip is not { } exported) return;
+        if (choice.SavePath != null) { _ = SaveEdited(exported, choice.Edit, choice.SavePath); return; }
         // Untouched clips are shared unchanged (all tracks, no trim pass).
-        _ = ShareClip(clip, chosen: false, choice.Edit.ChangesClip(duration, defaultTrack) ? choice.Edit : null);
+        _ = ShareClip(exported, chosen: false, choice.Edit.ChangesClip(duration, defaultTrack) ? choice.Edit : null);
     }
     // Writes the edited clip (lossless) and remembers the folder for the next export.
     async Task SaveEdited(string clip, ClipEdit edit, string path)
@@ -214,7 +215,6 @@ public sealed class TrayAppContext : ApplicationContext
     {
         if (sharer == null) return;
         shareItem.Text = sharer.IsStarting ? "Cancel sharing" : sharer.Current is { } c ? $"Stop sharing ({MinutesLeft(c)} min left)" : $"Quick share last clip ({settings.ShareMinutes} min)";
-        editItem.Visible = sharer.Current == null && !sharer.IsStarting;
         copyLinkItem.Visible = sharer.Current != null;
     }
     void ClipSaved(object? sender, ClipSavedEventArgs args)

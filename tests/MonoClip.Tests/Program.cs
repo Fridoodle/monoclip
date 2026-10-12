@@ -88,9 +88,10 @@ Test("settings require supported frame rates", () =>
 });
 Test("settings require clip duration within inclusive bounds", () =>
 {
-    foreach (var seconds in new[] { -1, 0, 4, 301, int.MaxValue })
+    foreach (var seconds in new[] { -1, 0, 4, 1001, int.MaxValue })
         Throws<ArgumentException>(() => new AppSettings { ClipSeconds = seconds }.Validate());
-    foreach (var seconds in new[] { 5, 30, 300 }) new AppSettings { ClipSeconds = seconds }.Validate();
+    foreach (var seconds in new[] { 5, 30, 300, 1000 }) new AppSettings { ClipSeconds = seconds }.Validate();
+    Equal(30, new AppSettings().ClipSeconds);
 });
 Test("buffer memory budget grows with duration and bitrate", () => {
     var method=typeof(CapturePolicy).GetMethod("BufferMegabytes"); True(method is not null,"BufferMegabytes missing");
@@ -256,7 +257,8 @@ Test("share server keeps connections alive, caps parallel viewers and stops comp
     }finally{Directory.Delete(dir,true);}
 });
 Test("share duration is limited to 5 to 30 minutes and survives legacy settings",()=>{
-    foreach(var m in new[]{-1,0,4,31,600})Throws<ArgumentException>(()=>new AppSettings{ShareMinutes=m}.Validate());
+    foreach(var m in new[]{-1,0,4,121,600})Throws<ArgumentException>(()=>new AppSettings{ShareMinutes=m}.Validate());
+    foreach(var m in new[]{5,15,30,120})new AppSettings{ShareMinutes=m}.Validate();Equal(15,new AppSettings().ShareMinutes);
     foreach(var m in new[]{5,15,30})new AppSettings{ShareMinutes=m}.Validate();
     var dir=Path.Combine(Path.GetTempPath(),"MonoClip-sharemin-"+Guid.NewGuid());Directory.CreateDirectory(dir);
     try{var file=Path.Combine(dir,"settings.json");File.WriteAllText(file,"{}");Equal(15,SettingsStore.Load(file).ShareMinutes);SettingsStore.Save(file,new AppSettings{ShareMinutes=25});Equal(25,SettingsStore.Load(file).ShareMinutes);}finally{Directory.Delete(dir,true);}
@@ -286,7 +288,7 @@ Test("only real MKV/MP4 videos up to the size limit can be shared manually",()=>
         Throws<ArgumentException>(()=>SharePolicy.CheckShareable(F("tiny.mkv",[0x1A,0x45])));
         var big=Path.Combine(dir,"big.mkv");using(var s=File.Create(big)){s.Write(mkv);s.SetLength((SharePolicy.MaxShareMegabytes+1)*1024L*1024);}
         try{SharePolicy.CheckShareable(big);throw new Exception("oversized file accepted");}catch(ArgumentException e){True(e.Message.Contains("max "+SharePolicy.MaxShareMegabytes+" MB"),"size reason missing: "+e.Message);}
-        Equal(500,SharePolicy.MaxShareMegabytes);
+        Equal(1024,SharePolicy.MaxShareMegabytes);
     }finally{Directory.Delete(dir,true);}
 });
 Test("share server can start before the clip is ready and answers 503 until then",()=>{
@@ -367,7 +369,7 @@ Test("share server serves the embed copy with ranges, only while attached",()=>{
         var whole=http.GetAsync("/tok/embed.mp4").Result;Equal("video/mp4",whole.Content.Headers.ContentType!.MediaType);Equal(40,whole.Content.ReadAsByteArrayAsync().Result.Length);
         var part=new HttpRequestMessage(HttpMethod.Get,"/tok/embed.mp4");part.Headers.Range=new(10,19);var r=http.Send(part);Equal(206,(int)r.StatusCode);Equal(10,(int)r.Content.ReadAsByteArrayAsync().Result[0]);
         Equal(100,http.GetAsync("/tok/c.mp4").Result.Content.ReadAsByteArrayAsync().Result.Length);
-        lock(sent)Equal("40,10,100",string.Join(",",sent));
+        for(int i=0;i<100;i++){lock(sent)if(sent.Count>=3)break;Thread.Sleep(10);}lock(sent)Equal("40,10,100",string.Join(",",sent));
         server.AttachPage(new("/tok",[1],"/tok/preview.jpg",[2]));Equal(404,(int)http.GetAsync("/tok/embed.mp4").Result.StatusCode);
     }finally{Directory.Delete(dir,true);}
 });
