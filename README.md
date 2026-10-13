@@ -1,3 +1,4 @@
+<img width="3200" height="960" alt="readme-banner@2x" src="https://github.com/user-attachments/assets/150a5644-50f3-4a5d-be23-9143cfcc1896" />
 # MonoClip
 
 Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GPU-encoded buffer in RAM and saves them on a hotkey. It runs in the tray.
