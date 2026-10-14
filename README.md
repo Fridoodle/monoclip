@@ -26,7 +26,7 @@ The folder contains `MonoClip.exe` (a small launcher), `app\` and `info\`. Setti
 
 ## Settings
 
-The window shows the basic options; **Advanced settings** shows the rest.
+Double-click the tray icon (or choose **Settings** in its menu) to open MonoClip right above the taskbar next to the tray. It shows the buffer status, the actions and the basic options; the gear opens all other settings. Changes apply immediately, and clicking anywhere else closes the window.
 
 | Setting | Default |
 |---|---|
@@ -34,15 +34,15 @@ The window shows the basic options; **Advanced settings** shows the rest.
 | Hotkey | `Ctrl+Shift+F9` |
 | Start with Windows | off |
 | Folder | `Videos\MonoClip` |
-| Resolution / frame rate (advanced) | 1920 × 1080, 60 FPS |
-| Quality (advanced) | Balanced (15 Mbit/s at 1080p60) |
-| Desktop audio, microphone, sound effects (advanced) | on |
-| Start in tray, start buffer on launch (advanced) | on |
-| Sort clips by application (advanced) | on |
-| Share new clips automatically (advanced) | off |
-| Copy new share links to the clipboard (advanced) | on |
-| Link to the video file instead of a player page (advanced) | off |
-| Link lifetime (advanced) | 15 min |
+| Resolution / frame rate (gear) | 1920 × 1080, 60 FPS |
+| Quality (gear) | Balanced (15 Mbit/s at 1080p60) |
+| Desktop audio, microphone, sound effects (gear) | on |
+| Start in tray, start buffer on launch (gear) | on |
+| Sort clips by application (gear) | on |
+| Share new clips automatically (gear) | off |
+| Copy new links to the clipboard (gear) | on |
+| Link to the video file, no player page (gear) | off |
+| Link lifetime (gear) | 15 min |
 
 Bitrate scales with resolution and frame rate: Performance is 0.6× Balanced, Quality is 1.6×, limited to 2.5–100 Mbit/s.
 
@@ -58,7 +58,7 @@ Clips are MKV files sorted into one folder per game (`Desktop` for everything el
 
 **Export clip** opens a small editor with the last clip: watch it, drag the start and end handles to trim it and switch off the game/desktop audio or the microphone (when both were recorded), then **Share** it or **Save…** it as an MP4 to a folder of your choice. **Choose clip…** or dropping a file on the editor switches to another clip. Trimming is lossless and instant, so the clip can start up to a second before the start mark. To open any MKV/MP4 up to 1 GB, drag it onto the settings window or use **Export a file…**.
 
-- The link opens a small player page with a preview image (Open Graph tags, like Medal or YouTube links). **Link to the video file instead of a player page** (advanced) shares the MP4 directly.
+- The link opens a small player page with a preview image (Open Graph tags, like Medal or YouTube links). **Link to the video file, no player page** (gear) shares the MP4 directly.
 - Discord shows a player only if the whole video arrives within about 10 seconds. MonoClip measures your upload while sharing (stored in `%LOCALAPPDATA%\MonoClip\upload-speed.txt`) and gives Discord a copy that uploads in about 4 seconds: up to 1080p, at most 40 MB, 10 MB before the first measurement. Clips that already fit are embedded as they are; the page in a browser always plays the original.
 - The clip is remuxed to MP4 and served from `127.0.0.1` through a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). This works behind CGNAT and does not expose your IP address.
 - The link stops working after the chosen time or when sharing is stopped. A working tunnel is kept for 30 minutes after the last share, so the next clip is shared in about a second.

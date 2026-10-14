@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1
+
+- New settings window, like a tray flyout: double-click the tray icon (or choose Settings) and it opens right above the taskbar next to the tray. Clicking anywhere else closes it. It shows the buffer status, the actions (start/stop, save clip, quick share, export) and the basic settings; the gear opens all other settings on a second page.
+- Changes apply immediately (after a short pause, as some restart the buffer); there is no Apply button anymore. The clip folder is chosen with the folder picker.
+- Smaller and calmer look: slightly rounded blocks that all have the same height, switches instead of check boxes, a segmented quality choice, − / + steppers and dark drop-downs. The export editor's buttons match.
+- Lighter recording: with only one audio source on, MonoClip no longer encodes a second track that was an exact copy of the mix (about 1.5 % of a CPU core less). New setting "Separate desktop and mic tracks" (on by default) to skip the extra tracks entirely when both are recorded; Export then has a single audio switch.
+- Fixed: every stop or restart of the buffer left the capture sources to be freed after libobs had shut down ("Double destroy" in capture.log).
+- Memory used for sharing and exporting (Windows media and shell components) is handed back to Windows afterwards.
+
 ## 1.1.2
 
 - Capture follows the active window (the one you are tabbed into) instead of the window under the mouse, so games played with a controller are captured too. The desktop is captured on the monitor of the active window; MonoClip's own windows do not take over the capture.

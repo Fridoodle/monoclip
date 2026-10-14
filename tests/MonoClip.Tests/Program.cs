@@ -50,6 +50,9 @@ Test("estimated clip size covers video, every audio track and keyframe slack", (
 {
     var s = new AppSettings();
     Equal(3, CapturePolicy.AudioTracks(s)); Equal(1, CapturePolicy.AudioTracks(s with { DesktopAudio = false, Microphone = false }));
+    // One source: its own track would copy the mix, so only the mix is encoded; the same when separate tracks are off.
+    Equal(1, CapturePolicy.AudioTracks(s with { Microphone = false })); Equal(1, CapturePolicy.AudioTracks(s with { DesktopAudio = false })); Equal(1, CapturePolicy.AudioTracks(s with { SeparateAudioTracks = false }));
+    True(CapturePolicy.SeparateTracks(s) && !CapturePolicy.SeparateTracks(s with { Microphone = false }), "separate tracks only with both sources");
     var expected = (15000 + 3 * 160) * 1000d * 30.5 / 8 / (1024 * 1024) * 1.02;
     True(Math.Abs(CapturePolicy.EstimatedClipMegabytes(s) - expected) < 0.001, "unexpected 1080p60 30 s estimate " + CapturePolicy.EstimatedClipMegabytes(s));
     True(CapturePolicy.EstimatedClipMegabytes(s with { ClipSeconds = 60 }) > 1.9 * CapturePolicy.EstimatedClipMegabytes(s), "length not reflected");
@@ -67,7 +70,7 @@ Test("settings expose required safe defaults", () =>
         ["Width"] = 1920, ["Height"] = 1080, ["Fps"] = 60, ["ClipSeconds"] = 30,
         ["Hotkey"] = "Ctrl+Shift+F9", ["Microphone"] = true, ["DesktopAudio"] = true,
         ["StartWithWindows"] = false, ["StartMinimized"] = true, ["StartBufferOnLaunch"] = true,
-        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["CopyShareLink"] = true, ["SortByApp"] = true, ["DirectLink"] = false, ["ExportDirectory"] = "",
+        ["Quality"] = QualityPreset.Balanced, ["AdvancedMode"] = false, ["ShareMinutes"] = 15, ["AutoShare"] = false, ["CopyShareLink"] = true, ["SortByApp"] = true, ["DirectLink"] = false, ["SeparateAudioTracks"] = true, ["ExportDirectory"] = "",
         ["MicrophoneDevice"] = "default", ["DesktopDevice"] = "default",
         ["ClipsDirectory"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "MonoClip")
     };

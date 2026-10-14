@@ -21,6 +21,7 @@ public sealed record AppSettings
     public bool StartWithWindows { get; set; }
     public bool StartMinimized { get; set; } = true;
     public bool StartBufferOnLaunch { get; set; } = true;
+    // No longer used (the settings popup has a second page instead of a mode); kept so older settings files round-trip.
     public bool AdvancedMode { get; set; }
     public int ShareMinutes { get; set; } = SharePolicy.DefaultMinutes;
     // Share every new clip right after saving and copy the link (advanced, off by default).
@@ -31,6 +32,9 @@ public sealed record AppSettings
     public bool SortByApp { get; set; } = true;
     // Share the MP4 itself instead of a player page with preview (advanced, off by default).
     public bool DirectLink { get; set; }
+    // Record desktop and microphone again on tracks of their own, so the export editor can mute one (on by default;
+    // only when both are recorded). Each extra AAC track costs about 1.5 % of a CPU core.
+    public bool SeparateAudioTracks { get; set; } = true;
     // Folder the export editor last saved to; empty means the Videos folder.
     public string ExportDirectory { get; set; } = "";
     public string ExportFolder() => !string.IsNullOrWhiteSpace(ExportDirectory) && Directory.Exists(ExportDirectory) ? ExportDirectory : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);

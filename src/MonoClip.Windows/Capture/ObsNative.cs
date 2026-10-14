@@ -12,6 +12,7 @@ internal static class Obs
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void Log(int level, IntPtr format, IntPtr args, IntPtr param);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool obs_startup([MarshalAs(UnmanagedType.LPUTF8Str)] string locale, [MarshalAs(UnmanagedType.LPUTF8Str)] string config, IntPtr profiler);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_shutdown();
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_wait_for_destroy_queue();
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_add_data_path([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern int obs_reset_video(ref VideoInfo info);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool obs_reset_audio(ref AudioInfo info);
@@ -48,6 +49,7 @@ internal static class Obs
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr obs_scene_get_source(IntPtr scene);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr obs_scene_add(IntPtr scene, IntPtr source);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_scene_release(IntPtr scene);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_remove(IntPtr item);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_bounds_type(IntPtr item, int type);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_bounds_alignment(IntPtr item, uint align);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_bounds(IntPtr item, ref Vec2 bounds);

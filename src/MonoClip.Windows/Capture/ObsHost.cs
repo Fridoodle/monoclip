@@ -61,5 +61,7 @@ public sealed class ObsHost : IDisposable
         }
         catch { Dispose(); throw; }
     }
-    public void Dispose() { if (initialized) { Obs.obs_shutdown(); initialized = false; if (previousDirectory != null && Directory.Exists(previousDirectory)) Directory.SetCurrentDirectory(previousDirectory); lock (LogLock) { logWriter?.Dispose(); logWriter = null; } } }
+    // libobs destroys released sources later, on its own task thread: let that finish before shutting down, or the
+    // shutdown frees them first and the queued destroys hit freed sources ("Double destroy").
+    public void Dispose() { if (initialized) { Obs.obs_wait_for_destroy_queue(); Obs.obs_shutdown(); initialized = false; if (previousDirectory != null && Directory.Exists(previousDirectory)) Directory.SetCurrentDirectory(previousDirectory); lock (LogLock) { logWriter?.Dispose(); logWriter = null; } } }
 }

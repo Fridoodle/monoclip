@@ -51,9 +51,10 @@ public sealed class ClipEngine : IClipEngine
             // so switching between them is instant instead of re-hooking each time.
             Obs.obs_source_inc_showing(game); foreach (var w in windows) Obs.obs_source_inc_showing(w); keepShowing = true;
             Obs.obs_set_output_source(0, Obs.obs_scene_get_source(scene));
-            // Track 1 is a playback mix; track 2 desktop-only; track 3 microphone-only.
-            if (s.DesktopAudio) AddAudio("wasapi_output_capture", "Desktop audio", s.DesktopDevice, 1u | 2u, 1);
-            if (s.Microphone) AddAudio("wasapi_input_capture", "Microphone", s.MicrophoneDevice, 1u | 4u, 2);
+            // Track 1 is a playback mix; with separate tracks, track 2 is desktop-only and track 3 microphone-only.
+            bool separate = CapturePolicy.SeparateTracks(s);
+            if (s.DesktopAudio) AddAudio("wasapi_output_capture", "Desktop audio", s.DesktopDevice, separate ? 1u | 2u : 1u, 1);
+            if (s.Microphone) AddAudio("wasapi_input_capture", "Microphone", s.MicrophoneDevice, separate ? 1u | 4u : 1u, 2);
             using (var data = new ObsData().Set("rate_control", "CBR").Set("bitrate", CapturePolicy.BitrateKbps(s)).Set("keyint_sec", 1L).Set("preset", "speed").Set("profile", "high").Set("bf", 0L).Set("bframes", 0L).Set("target_usage", "TU5"))
             {
                 // Intel (QSV) reads "bframes" and "target_usage" (TU5: fast), AMD and NVIDIA "bf" and "preset".
@@ -64,7 +65,7 @@ public sealed class ClipEngine : IClipEngine
             var staging = Path.Combine(s.ClipsDirectory, ".pending"); Directory.CreateDirectory(staging);
             using (var data = new ObsData().Set("directory", staging.Replace('\\', '/')).Set("format", "Replay_%CCYY-%MM-%DD_%hh-%mm-%ss").Set("extension", "mkv").Set("allow_spaces", false).Set("max_time_sec", s.ClipSeconds + 1).Set("max_size_mb", CapturePolicy.BufferMegabytes(s))) output = Require(Obs.obs_output_create("replay_buffer", "MonoClip replay", data.Handle, IntPtr.Zero), "Replay buffer");
             Obs.obs_output_set_video_encoder(output, videoEncoder);
-            AddAudioEncoder(0, "Playback mix"); if (s.DesktopAudio) AddAudioEncoder(1, "Desktop"); if (s.Microphone) AddAudioEncoder(2, "Microphone");
+            AddAudioEncoder(0, "Playback mix"); if (separate) { AddAudioEncoder(1, "Desktop"); AddAudioEncoder(2, "Microphone"); }
             var captureOutput = output; var generation = ++outputGeneration;
             savedCallback = (parameter, data) => OnSaved(captureOutput, generation);
 
@@ -245,7 +246,7 @@ public sealed class ClipEngine : IClipEngine
         catch (Exception e) { Post(() => SetStatus("Clip error: " + e.Message)); }
     }
     void Post(Action action) { try { if (!dispatcher.IsDisposed && dispatcher.IsHandleCreated) dispatcher.BeginInvoke(action); } catch (InvalidOperationException) { } }
-    public void Apply(AppSettings s) { s.Validate(); if (settings.Width == s.Width && settings.Height == s.Height && settings.Fps == s.Fps && settings.ClipSeconds == s.ClipSeconds && settings.ClipsDirectory == s.ClipsDirectory && settings.Microphone == s.Microphone && settings.DesktopAudio == s.DesktopAudio && settings.MicrophoneDevice == s.MicrophoneDevice && settings.DesktopDevice == s.DesktopDevice) { settings = s with { }; return; } var old = settings; bool running = IsRunning; if (!running) { settings = s with { }; return; } Stop(); try { Start(s); } catch { try { Start(old); } catch { } throw; } }
+    public void Apply(AppSettings s) { s.Validate(); if (settings.Width == s.Width && settings.Height == s.Height && settings.Fps == s.Fps && settings.ClipSeconds == s.ClipSeconds && settings.ClipsDirectory == s.ClipsDirectory && settings.Microphone == s.Microphone && settings.DesktopAudio == s.DesktopAudio && settings.SeparateAudioTracks == s.SeparateAudioTracks && settings.MicrophoneDevice == s.MicrophoneDevice && settings.DesktopDevice == s.DesktopDevice) { settings = s with { }; return; } var old = settings; bool running = IsRunning; if (!running) { settings = s with { }; return; } Stop(); try { Start(s); } catch { try { Start(old); } catch { } throw; } }
     public void Stop() { Release(); SetStatus(saveError ?? "Buffer stopped"); }
     void Release()
     {
@@ -280,13 +281,16 @@ public sealed class ClipEngine : IClipEngine
         lock (saveGate) exports.Clear();
         foreach (var e in audioEncoders) Obs.obs_encoder_release(e); audioEncoders.Clear(); if (videoEncoder != IntPtr.Zero) { Obs.obs_encoder_release(videoEncoder); videoEncoder = IntPtr.Zero; }
         if (host != null) { for (uint i = 0; i < 3; i++) Obs.obs_set_output_source(i, IntPtr.Zero); }
-        if (scene != IntPtr.Zero) { Obs.obs_scene_release(scene); scene = IntPtr.Zero; }
+        // Remove the items first: a released scene lets go of its sources only when libobs gets round to destroying it,
+        // which may be after shutdown ("sources remaining", then "Double destroy").
+        if (scene != IntPtr.Zero) { foreach (var item in new[] { desktopItem, gameItem, windowItems[0], windowItems[1] }) if (item != IntPtr.Zero) Obs.obs_sceneitem_remove(item); desktopItem = gameItem = IntPtr.Zero; Obs.obs_scene_release(scene); scene = IntPtr.Zero; }
         if (keepShowing) { Obs.obs_source_dec_showing(game); foreach (var w in windows) Obs.obs_source_dec_showing(w); keepShowing = false; }
         if (game != IntPtr.Zero) { Obs.obs_source_release(game); game = IntPtr.Zero; }
         for (int i = 0; i < windows.Length; i++) { if (windows[i] != IntPtr.Zero) Obs.obs_source_release(windows[i]); windows[i] = windowItems[i] = windowHandles[i] = IntPtr.Zero; }
         warming = -1; shownItem = candidateHandle = IntPtr.Zero; candidate = CaptureKind.Desktop; candidateInfo = null; candidateTicks = 0;
         if (desktop != IntPtr.Zero) { Obs.obs_source_release(desktop); desktop = IntPtr.Zero; }
-        foreach (var a in audioSources) Obs.obs_source_release(a); audioSources.Clear(); host?.Dispose(); host = null; hooked = false; monitorId = ""; monitorName = "";
+        foreach (var a in audioSources) Obs.obs_source_release(a); audioSources.Clear();
+        host?.Dispose(); host = null; hooked = false; monitorId = ""; monitorName = "";
     }
     public void Dispose() { if (disposed) return; Release(); disposed = true; timer.Dispose(); dispatcher.Dispose(); }
 }

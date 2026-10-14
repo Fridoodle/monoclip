@@ -12,6 +12,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--dpi")) return DpiProbe.Run(args[Array.IndexOf(args, "--dpi") + 1]);
+        if (args.Contains("--popup")) return PopupRender(args[Array.IndexOf(args, "--popup") + 1]);
         if (args.Contains("--editor")) return EditorProbe(args[Array.IndexOf(args, "--editor") + 1], args.Contains("--interactive"));
         Test("Hotkey parses modifiers and F8 without repeat", () =>
         {
@@ -166,18 +167,25 @@ internal static class Program
                 ctx.ShareClip(real,chosen:true).GetAwaiter().GetResult();Equal(real,sharer.SharedClip);Equal("Upload,Link",string.Join(",",played));
             }finally{Directory.Delete(dir,true);}
         });
-        Test("Simple mode hides advanced settings and advanced mode reveals quality slider",()=>{
+        Test("Home shows the basics, the gear opens all other settings and back returns",()=>{
             using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{Quality=MonoClip.Core.QualityPreset.Performance},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();Application.DoEvents();
             Control F(string name)=>(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
-            foreach(var name in new[]{"duration","hotkey","autostart","directory"})if(!F(name).Visible)throw new Exception(name+" missing in simple mode");
-            foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes","autoShare"})if(F(name).Visible)throw new Exception(name+" visible in simple mode");if(!F("pickButton").Visible)throw new Exception("Export a file hidden in simple mode");
+            string[] basic=["duration","hotkey","autostart","directory","pickButton","toggleButton","clipButton"],advanced=["resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes","autoShare","copyLink","directLink","sortByApp"];
+            foreach(var name in basic)if(!F(name).Visible)throw new Exception(name+" missing on the home page");
+            foreach(var name in advanced)if(F(name).Visible)throw new Exception(name+" visible on the home page");
             var budget=(Label)F("budget");if(!budget.Visible||!budget.Text.Contains("MB"))throw new Exception("estimated file size missing: "+budget.Text);
-            ((CheckBox)F("advanced")).Checked=true;Application.DoEvents();
-            foreach(var name in new[]{"resolution","fps","quality","mic","desktop","clipBeep","minimized","bufferOnLaunch","games","shareMinutes","autoShare","pickButton"})if(!F(name).Visible)throw new Exception(name+" hidden in advanced mode");
+            ((Button)F("gear")).PerformClick();Application.DoEvents();
+            foreach(var name in advanced)if(!F(name).Visible)throw new Exception(name+" hidden on the settings page");
+            if(F("duration").Visible)throw new Exception("home still shown behind the settings page");
             Equal(1920,form.ReadSettings().Width);Equal(60,form.ReadSettings().Fps);
-            if(!budget.Text.Contains("Mbit/s"))throw new Exception("advanced estimate lacks bitrate: "+budget.Text);
-            var slider=F("quality");Equal(MonoClip.Core.QualityPreset.Performance,form.ReadSettings().Quality);var before=budget.Text;
-            slider.GetType().GetProperty("Value")!.SetValue(slider,2);Equal(MonoClip.Core.QualityPreset.Quality,form.ReadSettings().Quality);Equal(true,form.ReadSettings().AdvancedMode);if(budget.Text==before)throw new Exception("estimate ignores quality");
+            var detail=(Label)F("budgetDetail");if(!detail.Visible||!detail.Text.Contains("Mbit/s"))throw new Exception("settings estimate lacks bitrate: "+detail.Text);
+            var slider=F("quality");Equal(MonoClip.Core.QualityPreset.Performance,form.ReadSettings().Quality);var before=detail.Text;
+            slider.GetType().GetProperty("Value")!.SetValue(slider,2);Equal(MonoClip.Core.QualityPreset.Quality,form.ReadSettings().Quality);if(detail.Text==before)throw new Exception("estimate ignores quality");
+            // The settings page has the basics too, in step with home's.
+            foreach(var name in new[]{"duration2","hotkey2","directory2","autostart2"})if(!F(name).Visible)throw new Exception(name+" missing on the settings page");
+            ((NumericUpDown)F("duration2")).Value=75;Equal(75,form.ReadSettings().ClipSeconds);((CheckBox)F("autostart2")).Checked=true;Equal(true,form.ReadSettings().StartWithWindows);
+            ((NumericUpDown)F("duration")).Value=40;Equal(40m,((NumericUpDown)F("duration2")).Value);((TextBox)F("hotkey")).Text="Ctrl+Alt+F7";Equal("Ctrl+Alt+F7",((TextBox)F("hotkey2")).Text);
+            ((Button)F("back")).PerformClick();Application.DoEvents();if(!F("duration").Visible||F("resolution").Visible)throw new Exception("back did not return home");
             using(var image=new Bitmap(slider.Width,slider.Height)){slider.DrawToBitmap(image,slider.ClientRectangle);for(int x=0;x<image.Width;x++)for(int y=0;y<image.Height-slider.Font.Height-6;y++){var c=image.GetPixel(x,y);if(Math.Max(c.R,Math.Max(c.G,c.B))-Math.Min(c.R,Math.Min(c.G,c.B))>12)throw new Exception("slider is not monochrome");}}
             form.Close();
         });
@@ -272,8 +280,8 @@ internal static class Program
             form.DropFiles(["C:\\a.mkv","C:\\b.mkv"]);Equal(0,shared.Count);
             form.DropFiles(["C:\\clip.mkv"]);Equal("C:\\clip.mkv",shared.Single());
             if(!form.AllowDrop)throw new Exception("window does not accept drops");
-            var table=(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField("table",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
-            if(!table.Controls.Cast<Control>().All(c=>c.AllowDrop))throw new Exception("some controls block drops");
+            IEnumerable<Control> All(Control c)=>c.Controls.Cast<Control>().SelectMany(x=>All(x).Prepend(x));
+            if(All(form).FirstOrDefault(c=>!c.AllowDrop) is {} blocking)throw new Exception(blocking.GetType().Name+" blocks drops");
         });
         Test("Manual buffer start/stop, stopping a share and launch have their own sounds",()=>{
             var dir=Path.Combine(Path.GetTempPath(),"MonoClip-cues-"+Guid.NewGuid());Directory.CreateDirectory(dir);
@@ -364,10 +372,50 @@ internal static class Program
             var box=(CheckBox)typeof(MonoClip.Windows.UI.SettingsForm).GetField("directLink",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
             Equal(false,form.ReadSettings().DirectLink);box.Checked=true;Equal(true,form.ReadSettings().DirectLink);form.Show();Application.DoEvents();if(box.Visible)throw new Exception("visible in simple mode");form.Close();
         });
-        Test("Advanced mode toggle persists immediately",()=>{
-            MonoClip.Core.AppSettings? saved=null;using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),s=>saved=s,()=>{},()=>{});
-            ((CheckBox)typeof(MonoClip.Windows.UI.SettingsForm).GetField("advanced",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!).Checked=true;
-            if(saved?.AdvancedMode!=true)throw new Exception("advanced mode not saved");
+        Test("Changes apply by themselves after a short pause, several at once, invalid ones never",()=>{
+            var saves=new List<MonoClip.Core.AppSettings>();using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),saves.Add,()=>{},()=>{});form.Show();Application.DoEvents();
+            T F<T>(string name)=>(T)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+            void Wait(int ms){var w=System.Diagnostics.Stopwatch.StartNew();while(w.ElapsedMilliseconds<ms){Application.DoEvents();Thread.Sleep(10);}}
+            Wait(700);Equal(0,saves.Count); // opening applies nothing
+            F<CheckBox>("clipBeep").Checked=false;F<NumericUpDown>("duration").Value=45;Equal(0,saves.Count);Wait(800);
+            Equal(1,saves.Count);Equal(false,saves[0].ClipBeep);Equal(45,saves[0].ClipSeconds);
+            // A bad value is reported and not applied; the rest stays as it was.
+            F<TextBox>("directory").Text="";F<CheckBox>("autoShare").Checked=true;Wait(800);Equal(1,saves.Count);if(F<Label>("feedback").Text.Length==0)throw new Exception("invalid value not reported");
+            form.Close();
+        });
+        Test("Popup sits next to the taskbar by the tray, inside the screen",()=>{
+            var screen=new Rectangle(0,0,1920,1080);var size=new Size(360,500);
+            Equal(new Rectangle(1548,528,360,500),MonoClip.Windows.UI.SettingsForm.PopupBounds(size,new Point(1850,1060),screen,new Rectangle(0,0,1920,1040),12)); // taskbar at the bottom, tray in the corner
+            Equal(new Rectangle(820,528,360,500),MonoClip.Windows.UI.SettingsForm.PopupBounds(size,new Point(1000,1060),screen,new Rectangle(0,0,1920,1040),12)); // centred on the clicked icon
+            Equal(new Rectangle(1548,52,360,500),MonoClip.Windows.UI.SettingsForm.PopupBounds(size,new Point(1850,20),screen,new Rectangle(0,40,1920,1040),12)); // taskbar at the top
+            Equal(new Rectangle(1488,568,360,500),MonoClip.Windows.UI.SettingsForm.PopupBounds(size,new Point(1900,1000),screen,new Rectangle(0,0,1860,1080),12)); // taskbar on the right
+            Equal(new Rectangle(72,568,360,500),MonoClip.Windows.UI.SettingsForm.PopupBounds(size,new Point(20,1000),screen,new Rectangle(60,0,1860,1080),12)); // taskbar on the left
+            Equal(new Rectangle(1548,12,360,1016),MonoClip.Windows.UI.SettingsForm.PopupBounds(new Size(360,4000),new Point(1850,1060),screen,new Rectangle(0,0,1920,1040),12)); // never taller than the screen
+        });
+        Test("Popup closes when it loses focus, applying a pending change first; its own dialogs keep it open",()=>{
+            var saves=new List<MonoClip.Core.AppSettings>();using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),saves.Add,()=>{},()=>{});
+            var type=typeof(MonoClip.Windows.UI.SettingsForm);var deactivate=typeof(Form).GetMethod("OnDeactivate",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            var area=Screen.PrimaryScreen!.WorkingArea;form.ShowNear(new Point(area.Right-40,area.Bottom-5));Application.DoEvents();
+            if(!form.Visible||!area.Contains(form.Bounds)||form.Bottom<area.Bottom-40)throw new Exception("popup not by the tray: "+form.Bounds+" in "+area);
+            type.GetField("dialogs",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(form,1);deactivate.Invoke(form,[EventArgs.Empty]);if(!form.Visible)throw new Exception("closed behind its own dialog");
+            type.GetField("dialogs",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(form,0);
+            ((CheckBox)type.GetField("clipBeep",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!).Checked=false;deactivate.Invoke(form,[EventArgs.Empty]);Application.DoEvents();
+            if(form.Visible)throw new Exception("popup stayed open after losing focus");Equal(1,saves.Count);Equal(false,saves[0].ClipBeep);
+            // Reopening always starts on the home page.
+            type.GetMethod("ShowMore",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(form,null);form.ShowNear(null);Application.DoEvents();
+            if(!((Control)type.GetField("home",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!).Visible)throw new Exception("reopened on the settings page");form.Close();
+        });
+        Test("Every block and button row has the same height, and its contents fit inside",()=>{
+            using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(),new FakeEngine(),_=>{},()=>{},()=>{});form.AttachSharing(new FakeSharer(),()=>{},()=>{},()=>{},_=>{});form.Show();Application.DoEvents();
+            var type=typeof(MonoClip.Windows.UI.SettingsForm);IEnumerable<Control> All(Control c)=>c.Controls.Cast<Control>().SelectMany(x=>All(x).Prepend(x));
+            foreach(var page in new[]{"home","more"}){
+                type.GetMethod(page=="home"?"ShowHome":"ShowMore",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(form,null);Application.DoEvents();
+                var blocks=All((Control)type.GetField(page,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!).Where(c=>c.Visible&&c.GetType().Name is "Card" or "ButtonRow").ToList();
+                if(blocks.Count<5)throw new Exception(page+": only "+blocks.Count+" blocks");
+                var heights=blocks.Select(b=>b.Height).Distinct().ToList();if(heights.Count!=1)throw new Exception(page+": block heights differ: "+string.Join(",",heights));
+                foreach(var b in blocks)foreach(Control inner in b.Controls)if(inner.Visible&&(inner.Left<0||inner.Top<0||inner.Right>b.Width||inner.Bottom>b.Height))throw new Exception($"{page}: {inner.GetType().Name} sticks out of its block ({inner.Bounds} in {b.Size})");
+            }
+            form.Close();
         });
         Test("Estimated size formatting",()=>{
             Equal("5.0 MB",MonoClip.Windows.UI.SettingsForm.FormatSize(5).Replace(',','.'));Equal("58 MB",MonoClip.Windows.UI.SettingsForm.FormatSize(57.6));Equal("1.5 GB",MonoClip.Windows.UI.SettingsForm.FormatSize(1536).Replace(',','.'));
@@ -381,17 +429,9 @@ internal static class Program
                 Equal(newest,selected);
             }finally{Thread.Sleep(300);Directory.Delete(dir,true);}
         });
-        // Opt-in visual check: renders the settings window (simple/advanced, sharing) and tray symbols to PNG.
-        if(args.Contains("--render"))Test("Render settings window and tray symbols",()=>{
+        // Opt-in visual check: renders the tray symbols to PNG (the settings popup has its own --popup mode).
+        if(args.Contains("--render"))Test("Render tray symbols",()=>{
             var dir=args[Array.IndexOf(args,"--render")+1];Directory.CreateDirectory(dir);
-            foreach(var advanced in new[]{false,true}){
-                var sharer=new FakeSharer();using var form=new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings{AdvancedMode=advanced},new FakeEngine(),_=>{},()=>{},()=>{});form.Show();
-                form.AttachSharing(sharer,()=>{},()=>{},()=>{},_=>{});if(advanced){sharer.ShareAsync("c.mkv",TimeSpan.FromMinutes(15));form.UpdateStatus();}
-                form.ClientSize=new Size(form.ClientSize.Width,advanced?1500:820);Application.DoEvents();
-                using var image=new Bitmap(form.Width,form.Height);form.DrawToBitmap(image,new Rectangle(Point.Empty,form.Size));image.Save(Path.Combine(dir,advanced?"settings-advanced.png":"settings-simple.png"));
-                if(advanced){var table=(Control)typeof(MonoClip.Windows.UI.SettingsForm).GetField("table",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;using var all=new Bitmap(table.Width,table.Height);table.DrawToBitmap(all,new Rectangle(Point.Empty,table.Size));all.Save(Path.Combine(dir,"settings-advanced-full.png"));}
-                form.Close();
-            }
             // Row per taskbar colour: recording, stopped, recording+online, creating (2 frames), error.
             var states=new (MonoClip.Windows.UI.TrayIconKind Kind,bool Online,int Frame)[]{(MonoClip.Windows.UI.TrayIconKind.Recording,false,0),(MonoClip.Windows.UI.TrayIconKind.Stopped,false,0),(MonoClip.Windows.UI.TrayIconKind.Recording,true,0),(MonoClip.Windows.UI.TrayIconKind.Busy,false,0),(MonoClip.Windows.UI.TrayIconKind.Busy,false,4),(MonoClip.Windows.UI.TrayIconKind.Error,false,0)};
             using var sheet=new Bitmap(states.Length*46+8,140);using(var g=Graphics.FromImage(sheet)){g.FillRectangle(new SolidBrush(Color.FromArgb(32,32,32)),0,0,sheet.Width,70);g.FillRectangle(new SolidBrush(Color.FromArgb(238,238,238)),0,70,sheet.Width,70);
@@ -414,6 +454,24 @@ internal static class Program
         form.Show(); var wait = System.Diagnostics.Stopwatch.StartNew(); while (wait.ElapsedMilliseconds < 2500) { Application.DoEvents(); Thread.Sleep(15); }
         using var shot = new Bitmap(form.Width, form.Height); using (var g = Graphics.FromImage(shot)) g.CopyFromScreen(form.Location, Point.Empty, form.Size);
         var file = Path.Combine(Path.GetTempPath(), "monoclip-editor.png"); shot.Save(file); Console.WriteLine("SHOT " + file + " EDIT " + form.CurrentEdit); form.Close(); return 0;
+    }
+    // Opt-in: draws the settings popup (home idle, home sharing, the whole settings page) into PNGs. The window is
+    // placed off-screen and shown without taking the focus, so nothing appears in front of the user.
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int w, int h, uint flags);
+    static int PopupRender(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        void Shot(Control c, string name) { using var image = new Bitmap(c.Width, c.Height); c.DrawToBitmap(image, new Rectangle(Point.Empty, c.Size)); image.Save(Path.Combine(dir, name)); Console.WriteLine("SHOT " + Path.Combine(dir, name)); }
+        using var form = new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(), new FakeEngine(), _ => { }, () => { }, () => { });
+        var sharer = new FakeSharer(); form.AttachSharing(sharer, () => { }, () => { }, () => { }, _ => { });
+        T F<T>(string name) => (T)typeof(MonoClip.Windows.UI.SettingsForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+        form.Location = new Point(-20000, -20000); var handle = form.Handle; typeof(Control).GetMethod("CreateControl", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(bool)])!.Invoke(form, [true]); SetWindowPos(handle, IntPtr.Zero, -20000, -20000, form.Width, form.Height, 0x0040 | 0x0010 | 0x0004); // SHOWWINDOW | NOACTIVATE | NOZORDER
+        var home = F<Control>("home"); var more = F<Control>("more");
+        void Fit(Control page) { page.PerformLayout(); var h = (int)page.GetType().GetProperty("ContentHeight")!.GetValue(page)!; form.ClientSize = new Size(form.ClientSize.Width, h); Application.DoEvents(); page.PerformLayout(); Application.DoEvents(); }
+        Fit(home); Shot(form, "popup-home.png");
+        sharer.ShareAsync("c.mkv", TimeSpan.FromMinutes(15)); form.UpdateStatus(); Fit(home); Shot(form, "popup-home-sharing.png");
+        typeof(MonoClip.Windows.UI.SettingsForm).GetMethod("ShowMore", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null); Fit(more); Shot(form, "popup-settings.png");
+        form.Close(); return 0;
     }
     private static void Test(string name, Action test)
     {
