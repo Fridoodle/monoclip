@@ -38,6 +38,14 @@ public static class WindowsIntegration
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{Path.GetFullPath(file)}\"") { UseShellExecute = false });
     }
     // Selects the newest clip when there is one; otherwise opens the (created) folder.
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool SetProcessWorkingSetSize(IntPtr process, nint min, nint max);
+    // After one-off work (sharing, exporting) Windows' media and shell components stay loaded with memory MonoClip no
+    // longer touches. Hand those pages back; anything still in use is paged in again on demand.
+    public static void TrimMemory()
+    {
+        GC.Collect(); GC.WaitForPendingFinalizers();
+        try { SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, -1, -1); } catch (InvalidOperationException) { }
+    }
     public static void OpenClipFolder(string folder, string? preferredClip = null)
     {
         Directory.CreateDirectory(folder);

@@ -4,6 +4,31 @@ class Program {
 [STAThread] static int Main(string[] args) {
 Console.OutputEncoding = System.Text.Encoding.UTF8; Console.InputEncoding = System.Text.Encoding.UTF8;
 try {
+    if(args.Contains("--profile")) {
+        // Diagnostics: runs the real engine (desktop capture) in a few configurations and reports CPU per named thread
+        // (libobs names its threads) and memory, after a warm-up. Optional: --profile <seconds per variant>.
+        int seconds=args.Length>Array.IndexOf(args,"--profile")+1&&int.TryParse(args[Array.IndexOf(args,"--profile")+1],out var n)?n:10;
+        var dir=Path.Combine(Path.GetTempPath(),"MonoClip-profile");Directory.CreateDirectory(dir);
+        var variants=args.Contains("--quick")?new (string Name,MonoClip.Core.AppSettings Settings)[]{("1080p60, desktop + mic",new(){Width=1920,Height=1080,Fps=60,ClipSeconds=90,ClipsDirectory=dir})}:new (string Name,MonoClip.Core.AppSettings Settings)[]{
+            ("720p30, desktop + mic (3 AAC tracks)",new(){Width=1280,Height=720,Fps=30,ClipSeconds=90,ClipsDirectory=dir}),
+            ("720p30, desktop only (2 AAC tracks)",new(){Width=1280,Height=720,Fps=30,ClipSeconds=90,Microphone=false,ClipsDirectory=dir}),
+            ("720p30, no audio (1 silent AAC track)",new(){Width=1280,Height=720,Fps=30,ClipSeconds=90,Microphone=false,DesktopAudio=false,ClipsDirectory=dir}),
+            ("1080p60, desktop + mic (3 AAC tracks)",new(){Width=1920,Height=1080,Fps=60,ClipSeconds=90,ClipsDirectory=dir})};
+        var self=System.Diagnostics.Process.GetCurrentProcess();
+        foreach(var (name,settings) in variants){
+            using var engine=new ClipEngine();engine.Start(settings);
+            void Pump(int ms){var w=System.Diagnostics.Stopwatch.StartNew();while(w.ElapsedMilliseconds<ms){Application.DoEvents();Thread.Sleep(20);}}
+            Pump(6000);self.Refresh();var before=new Dictionary<int,TimeSpan>();foreach(System.Diagnostics.ProcessThread t in self.Threads)try{before[t.Id]=t.TotalProcessorTime;}catch(Exception){}
+            var total=self.TotalProcessorTime;Pump(seconds*1000);self.Refresh();var spent=(self.TotalProcessorTime-total).TotalMilliseconds/(seconds*10.0);
+            var groups=new Dictionary<string,double>();
+            foreach(System.Diagnostics.ProcessThread t in self.Threads){try{if(!before.TryGetValue(t.Id,out var b))continue;var d=(t.TotalProcessorTime-b).TotalMilliseconds/(seconds*10.0);if(d<0.05)continue;var label=ThreadName(t.Id);groups[label]=groups.GetValueOrDefault(label)+d;}catch(Exception){}}
+            Console.WriteLine($"== {name}: {spent:0.0} % of one core, working set {self.WorkingSet64/1048576} MB, private {self.PrivateMemorySize64/1048576} MB, {self.Threads.Count} threads, managed heap {GC.GetTotalMemory(false)/1048576} MB");
+            foreach(var g in groups.OrderByDescending(g=>g.Value).Take(8))Console.WriteLine($"   {g.Value,5:0.0} %  {g.Key}");
+            engine.Stop();Pump(1500);
+        }
+        try{Directory.Delete(dir,true);}catch(IOException){}
+        return 0;
+    }
     if(args.Contains("--trim-file")) {
         // Diagnostics: trim any file (start, end in seconds, audio track or -1) and describe the result.
         int at=Array.IndexOf(args,"--trim-file");var input=args[at+1];var output=Path.Combine(Path.GetTempPath(),"MonoClip-trim-file.mp4");int track=int.Parse(args[at+4]);
@@ -282,6 +307,12 @@ try {
 // (mix 440 Hz, desktop 660 Hz, microphone 880 Hz) to tell them apart.
 static void TestClip(string mkv)=>Run("ffmpeg",$"-v error -f lavfi -i testsrc2=s=1280x720:r=30:d=6 -f lavfi -i sine=440:d=6 -f lavfi -i sine=660:d=6 -f lavfi -i sine=880:d=6 -map 0 -map 1 -map 2 -map 3 -c:v libx264 -g 30 -bf 0 -c:a aac -metadata:s:a:0 title=\"Playback mix\" -metadata:s:a:1 title=Desktop -metadata:s:a:2 title=Microphone \"{mkv}\"");
 [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+[DllImport("kernel32.dll")] static extern IntPtr OpenThread(int access, bool inherit, int id);
+[DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern int GetThreadDescription(IntPtr thread, out IntPtr name);
+[DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+// Thread name as set by its creator (libobs names its threads), or "(unnamed)".
+static string ThreadName(int id){var h=OpenThread(0x0800,false,id);if(h==IntPtr.Zero)return "?";try{if(GetThreadDescription(h,out var p)<0)return "?";var s=Marshal.PtrToStringUni(p);LocalFree(p);return string.IsNullOrEmpty(s)?"(unnamed)":s;}finally{CloseHandle(h);}}
 // Runs a tool (ffmpeg/ffprobe) and returns its output; a failure throws with its error text.
 static string Run(string exe,string arguments){var p=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe,arguments){RedirectStandardOutput=true,RedirectStandardError=true,UseShellExecute=false})!;var errors=p.StandardError.ReadToEndAsync();var output=p.StandardOutput.ReadToEnd();p.WaitForExit();if(p.ExitCode!=0)throw new Exception(exe+" failed: "+errors.Result);return output;}
 }

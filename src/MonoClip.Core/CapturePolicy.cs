@@ -14,7 +14,10 @@ public static class CapturePolicy
     }
     public static int BitrateKbps(AppSettings s) => BitrateKbps(s.Width, s.Height, s.Fps, s.Quality);
     // Track 1 is always the playback mix (silent when both sources are off).
-    public static int AudioTracks(AppSettings s) => 1 + (s.DesktopAudio ? 1 : 0) + (s.Microphone ? 1 : 0);
+    // Track 1 is always the mix. Desktop-only and microphone-only tracks are only worth encoding when both sources are
+    // recorded: with one source, its own track would be an exact copy of the mix.
+    public static bool SeparateTracks(AppSettings s) => s.SeparateAudioTracks && s.DesktopAudio && s.Microphone;
+    public static int AudioTracks(AppSettings s) => SeparateTracks(s) ? 3 : 1;
     public static int TotalKbps(AppSettings s) => BitrateKbps(s) + AudioTracks(s) * AudioKbpsPerTrack;
     // Keyframe-aligned saves (1 s GOP) run up to a second longer; Matroska overhead is ~2 %.
     public static double EstimatedClipMegabytes(AppSettings s) => TotalKbps(s) * 1000d * (s.ClipSeconds + 0.5) / 8 / (1024 * 1024) * 1.02;

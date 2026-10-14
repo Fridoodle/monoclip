@@ -33,8 +33,8 @@ public sealed class TrayAppContext : ApplicationContext
         toggleItem = new ToolStripMenuItem("Start buffer", null, (_, _) => Run(Toggle)); menu.Items.Add(toggleItem); saveItem = new ToolStripMenuItem("Save clip", null, (_, _) => Run(engine.SaveClip)); menu.Items.Add(saveItem);
         shareItem = new ToolStripMenuItem($"Quick share last clip ({settings.ShareMinutes} min)", null, (_, _) => ToggleShare()) { Visible = sharer != null }; menu.Items.Add(shareItem);
         editItem = new ToolStripMenuItem("Export clip", null, (_, _) => EditLastClip()); menu.Items.Add(editItem); copyLinkItem = new ToolStripMenuItem("Copy link", null, (_, _) => Run(CopyShareLink)) { Visible = false }; menu.Items.Add(copyLinkItem); menu.Opening += (_, _) => UpdateShareItems();
-        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Settings", null, (_, _) => ShowSettings()); menu.Items.Add("Open clip folder", null, (_, _) => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip))); menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Exit", null, (_, _) => ExitThread());
-        tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettings();
+        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Settings", null, (_, _) => ShowSettingsAt(Cursor.Position)); menu.Items.Add("Open clip folder", null, (_, _) => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip))); menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Exit", null, (_, _) => ExitThread());
+        tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettingsAt(Cursor.Position);
         hotkeys = new(() => Run(engine.SaveClip));
         try { hotkeys.Set(Hotkey.Parse(settings.Hotkey)); } catch (Exception e) { Fail("Hotkey unavailable: " + e.Message); }
         engine.StatusChanged += StatusChanged; engine.ClipSaved += ClipSaved; if (sharer != null) sharer.Changed += ShareChanged;
@@ -86,7 +86,9 @@ public sealed class TrayAppContext : ApplicationContext
         foreach (var kind in new[] { TrayIconKind.Recording, TrayIconKind.Stopped, TrayIconKind.Error }) foreach (var online in new[] { false, true }) icons[(kind, online)] = MakeIcon(kind, size, online);
         spinner = Enumerable.Range(0, SpinnerFrames).Select(f => MakeIcon(TrayIconKind.Busy, size, false, f)).ToArray();
     }
-    public void ShowSettings() { if (form == null || form.IsDisposed) { form = new(settings, engine, SaveSettings, Toggle, engine.SaveClip); if (sharer != null) form.AttachSharing(sharer, ToggleShare, EditLastClip, () => Run(CopyShareLink), path => Export(path, chosen: true)); } form.Show(); form.WindowState = FormWindowState.Normal; }
+    // The settings popup opens by the tray corner, or next to the tray icon (or menu) the user just clicked.
+    public void ShowSettings() => ShowSettingsAt(null);
+    void ShowSettingsAt(Point? anchor) { if (form == null || form.IsDisposed) { form = new(settings, engine, SaveSettings, Toggle, engine.SaveClip); if (sharer != null) form.AttachSharing(sharer, ToggleShare, EditLastClip, () => Run(CopyShareLink), path => Export(path, chosen: true)); } form.ShowNear(anchor); }
     // Manual start/stop (tray, settings window). Starting on launch plays the launch sound instead.
     void Toggle() { if (engine.IsRunning) { engine.Stop(); Cue(Sound.BufferOff); } else { engine.Start(settings); Cue(Sound.BufferOn); } UpdateTray(); }
     // Played on the very first start of a new install: the app only appears in the tray, which new users miss.
@@ -168,7 +170,7 @@ public sealed class TrayAppContext : ApplicationContext
                 settings = settings with { ExportDirectory = folder }; form?.KeepExportDirectory(folder);
                 try { SettingsStore.Save(settingsPath, settings); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             }
-            Cue(Sound.Clip); form?.Feedback("Saved: " + path);
+            Cue(Sound.Clip); form?.Feedback("Saved: " + path); WindowsIntegration.TrimMemory();
         }
         catch (Exception e) when (e is not OutOfMemoryException) { Fail("Export failed: " + e.Message); }
     }
@@ -190,7 +192,7 @@ public sealed class TrayAppContext : ApplicationContext
         }
         catch (OperationCanceledException) { form?.Feedback("Sharing cancelled."); }
         catch (Exception e) { Fail("Sharing failed: " + e.Message); }
-        finally { UpdateTray(); }
+        finally { UpdateTray(); WindowsIntegration.TrimMemory(); }
     }
     // "Valorant clip" for clips sorted into a game folder, otherwise a generic title.
     internal string ClipTitle(string clip)
