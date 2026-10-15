@@ -5,6 +5,7 @@
 - Cleaned up inside: the capture, settings, sharing and hotkey code was tidied and the tests were reorganised. Recording, clips, sharing and the settings work as before.
 - While the buffer was stopped, the settings named the capture target "Automatic: window under cursor". It now says "active window", as capture works since 1.1.2.
 - The last two German error messages (a hotkey with a modifier given twice, a damaged MP4 file) are now in English.
+- Friendlier to Windows Defender: the bundled .NET files now keep Microsoft's signatures, so a freshly downloaded copy has far fewer unknown files for Defender to check on its first start and first share. The download is about 15 MB larger.
 
 ## 1.2.1
 
