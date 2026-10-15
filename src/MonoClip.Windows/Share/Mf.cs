@@ -71,6 +71,57 @@ internal static unsafe class Mf
     public static void SetSampleTime(IntPtr sample, long time) => Check(((delegate* unmanaged[Stdcall]<IntPtr, long, int>)Vtbl(sample)[36])(sample, time), "sample time");
     public static void SetSampleDuration(IntPtr sample, long duration) => Check(((delegate* unmanaged[Stdcall]<IntPtr, long, int>)Vtbl(sample)[38])(sample, duration), "frame duration");
 
+    // Reader stream index and name of each audio track, in the order Media Foundation lists them.
+    public static List<(uint Stream, string? Name)> AudioStreams(IntPtr reader)
+    {
+        var audio = new List<(uint, string?)>();
+        for (uint i = 0; NativeType(reader, i, out var type) >= 0; i++)
+        {
+            bool isAudio; try { isAudio = GetGuid(type, MajorType) == Audio; } finally { Release(ref type); }
+            if (!isAudio) continue;
+            string? name = null;
+            if (PresentationAttribute(reader, i, StreamName, out var value))
+            {
+                if (value.Type == VtLpwstr && value.Pointer != 0) name = Marshal.PtrToStringUni(value.Pointer);
+                PropVariantClear(&value);
+            }
+            audio.Add((i, name));
+        }
+        return audio;
+    }
+
+    // A selected reader stream and the writer stream its samples go to.
+    public sealed record Route(uint Reader, uint Writer, bool Video);
+    public enum SampleFate { Write, Drop, EndStream }
+    // Copies the routed streams into the writer, interleaved by time so a player can stream the result from the start.
+    // decide sees each sample as it is read (and may retime it). Streams are read in the given order: a decision about
+    // later streams can rely on the first stream's first sample having been seen.
+    public static void Interleave(IntPtr reader, IntPtr writer, IReadOnlyList<Route> routes, Func<Route, IntPtr, long, SampleFate> decide, CancellationToken cancel)
+    {
+        var waiting = new IntPtr[routes.Count]; var times = new long[routes.Count]; var done = new bool[routes.Count];
+        try
+        {
+            while (true)
+            {
+                cancel.ThrowIfCancellationRequested();
+                for (int i = 0; i < routes.Count; i++)
+                    while (!done[i] && waiting[i] == 0)
+                    {
+                        if (!ReadSample(reader, routes[i].Reader, out var sample, out var time)) { done[i] = true; break; }
+                        if (sample == 0) continue;
+                        var fate = decide(routes[i], sample, time);
+                        if (fate == SampleFate.Write) { waiting[i] = sample; times[i] = time; continue; }
+                        Marshal.Release(sample); if (fate == SampleFate.EndStream) done[i] = true;
+                    }
+                int next = -1;
+                for (int i = 0; i < routes.Count; i++) if (waiting[i] != 0 && (next < 0 || times[i] < times[next])) next = i;
+                if (next < 0) return;
+                WriteSample(writer, routes[next].Writer, waiting[next]); Release(ref waiting[next]);
+            }
+        }
+        finally { for (int i = 0; i < waiting.Length; i++) Release(ref waiting[i]); }
+    }
+
     public static void Release(ref IntPtr com) { if (com != 0) Marshal.Release(com); com = 0; }
     public static void Check(int hr, string step) { if (hr < 0) throw new InvalidOperationException($"{step} failed (0x{hr:X8})."); }
 }

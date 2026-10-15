@@ -17,10 +17,9 @@ public sealed class ClipShareServer : IDisposable
     sealed record Route(string File, byte[] Path, string RequestPath, int CacheSeconds, bool Ready, SharePageFiles? Page = null);
     volatile Route? route;
     readonly TcpListener listener = new(IPAddress.Loopback, 0); readonly CancellationTokenSource stop = new();
-    readonly SemaphoreSlim slots; readonly HashSet<TcpClient> clients = []; long bytesSent; bool disposed;
+    readonly SemaphoreSlim slots; readonly HashSet<TcpClient> clients = []; bool disposed;
     public string RequestPath => route?.RequestPath ?? "";
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
-    public long BytesSent => Interlocked.Read(ref bytesSent);
     // Optional request log for diagnostics: method, path, user agent and range of every request.
     public Action<string>? Log { get; set; }
     // Bytes and time of every video response that was sent completely (used to estimate the upload speed).
@@ -116,7 +115,7 @@ public sealed class ClipShareServer : IDisposable
     async Task<bool> SendBytes(NetworkStream stream, string method, byte[] body, string type, int cacheSeconds, bool keepAlive)
     {
         await WriteHead(stream, "200 OK", [("Content-Type", type), ("Cache-Control", $"public, max-age={cacheSeconds}"), ("X-Content-Type-Options", "nosniff")], body.Length, keepAlive);
-        if (method == "GET") { await stream.WriteAsync(body, stop.Token); Interlocked.Add(ref bytesSent, body.Length); }
+        if (method == "GET") await stream.WriteAsync(body, stop.Token);
         return keepAlive;
     }
     async Task SendFile(NetworkStream stream, string file, long start, long count)
@@ -127,7 +126,7 @@ public sealed class ClipShareServer : IDisposable
         while (count > 0)
         {
             int n = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, count)), stop.Token); if (n == 0) throw new IOException("Clip is shorter than expected.");
-            await stream.WriteAsync(buffer.AsMemory(0, n), stop.Token); count -= n; Interlocked.Add(ref bytesSent, n);
+            await stream.WriteAsync(buffer.AsMemory(0, n), stop.Token); count -= n;
         }
     }
     async Task WriteHead(NetworkStream stream, string status, IEnumerable<(string Name, string Value)> headers, long contentLength, bool keepAlive)

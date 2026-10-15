@@ -37,15 +37,11 @@ public static class WindowsIntegration
             try { if (SHOpenFolderAndSelectItems(pidl, 0, null, 0) == 0) return; } finally { CoTaskMemFree(pidl); }
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{Path.GetFullPath(file)}\"") { UseShellExecute = false });
     }
-    // Selects the newest clip when there is one; otherwise opens the (created) folder.
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool SetProcessWorkingSetSize(IntPtr process, nint min, nint max);
     // After one-off work (sharing, exporting) Windows' media and shell components stay loaded with memory MonoClip no
-    // longer touches. Hand those pages back; anything still in use is paged in again on demand.
-    public static void TrimMemory()
-    {
-        GC.Collect(); GC.WaitForPendingFinalizers();
-        try { SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, -1, -1); } catch (InvalidOperationException) { }
-    }
+    // longer touches. Hand those pages back; anything still in use is paged in again on demand. -1: this process.
+    public static void TrimMemory() => SetProcessWorkingSetSize(-1, -1, -1);
+    // Selects the newest clip when there is one; otherwise opens the (created) folder.
     public static void OpenClipFolder(string folder, string? preferredClip = null)
     {
         Directory.CreateDirectory(folder);

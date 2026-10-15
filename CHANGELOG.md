@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- Cleaned up inside: the capture, settings, sharing and hotkey code was tidied and the tests were reorganised. Recording, clips, sharing and the settings work as before.
+- While the buffer was stopped, the settings named the capture target "Automatic: window under cursor". It now says "active window", as capture works since 1.1.2.
+- The last two German error messages (a hotkey with a modifier given twice, a damaged MP4 file) are now in English.
+
 ## 1.2.1
 
 - New settings window, like a tray flyout: double-click the tray icon (or choose Settings) and it opens right above the taskbar next to the tray. Clicking anywhere else closes it. It shows the buffer status, the actions (start/stop, save clip, quick share, export) and the basic settings; the gear opens all other settings on a second page.

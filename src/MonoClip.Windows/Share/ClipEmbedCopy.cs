@@ -33,11 +33,9 @@ internal static unsafe class ClipEmbedCopy
         }
         finally { MFShutdown(); if (File.Exists(raw)) File.Delete(raw); }
     }
-    // A selected reader stream and its writer stream, with the next sample waiting to be written.
-    sealed class Track { public uint Reader, Writer; public bool Video, Done; public IntPtr Sample; public long Time; }
     static void Transcode(string mp4, string output, int bitrate, bool gpu, bool hardware, CancellationToken cancel)
     {
-        IntPtr reader = 0, writer = 0, attributes = 0, native = 0, decoded = 0, encoded = 0, audio = 0, device = 0, manager = 0; var tracks = new List<Track>();
+        IntPtr reader = 0, writer = 0, attributes = 0, native = 0, decoded = 0, encoded = 0, audio = 0, device = 0, manager = 0;
         try
         {
             if (gpu)
@@ -65,51 +63,35 @@ internal static unsafe class ClipEmbedCopy
             Check(MFCreateAttributes(out attributes, 3), "attributes"); SetU32(attributes, HardwareTransforms, hardware ? 1u : 0u); SetU32(attributes, DisableThrottling, 1); if (gpu) SetUnknown(attributes, D3DManager, manager);
             Check(MFCreateSinkWriterFromURL(output, 0, attributes, out writer), "Creating the copy");
             encoded = VideoType(H264, width, height, (ulong)fps << 32 | 1); SetU32(encoded, AvgBitrate, (uint)bitrate); SetU32(encoded, Profile, 100);
-            var video = new Track { Reader = FirstVideo, Writer = AddStream(writer, encoded, "video stream"), Video = true }; tracks.Add(video);
+            var routes = new List<Route> { new(FirstVideo, AddStream(writer, encoded, "video stream"), Video: true) };
             Release(ref decoded); decoded = VideoType(Nv12, width, height, (ulong)fps << 32 | 1);
-            SetWriterInput(writer, video.Writer, decoded, "Encoding the copy");
+            SetWriterInput(writer, routes[0].Writer, decoded, "Encoding the copy");
 
             // The playback mix as is (AAC from the clip), found by name; a clip without audio just has none.
-            var streams = ClipTrim.AudioStreams(reader);
+            var streams = AudioStreams(reader);
             if (ClipAudio.DefaultTrack(streams.Select(a => a.Name).ToList()) is int track && NativeType(reader, streams[track].Stream, out audio) >= 0)
             {
                 uint stream = streams[track].Stream;
                 SelectStream(reader, stream, true); SetReaderType(reader, stream, audio, "audio format");
-                var sound = new Track { Reader = stream, Writer = AddStream(writer, audio, "audio stream") };
-                SetWriterInput(writer, sound.Writer, audio, "audio copy"); tracks.Add(sound);
+                var sound = new Route(stream, AddStream(writer, audio, "audio stream"), Video: false);
+                SetWriterInput(writer, sound.Writer, audio, "audio copy"); routes.Add(sound);
             }
             BeginWriting(writer);
 
-            // Interleave by time so a player can stream the copy from the start. Video frames above
-            // 30 fps are dropped evenly; the kept ones last one output frame each.
+            // Video frames above 30 fps are dropped evenly; the kept ones last one output frame each.
             long frame = 10_000_000 / fps, nextFrame = long.MinValue;
-            while (true)
+            Interleave(reader, writer, routes, (route, sample, time) =>
             {
-                cancel.ThrowIfCancellationRequested();
-                foreach (var t in tracks)
-                    while (!t.Done && t.Sample == 0)
-                    {
-                        if (!ReadSample(reader, t.Reader, out var sample, out var time)) { t.Done = true; break; }
-                        if (sample == 0) continue;
-                        if (t.Video)
-                        {
-                            // 1 ms tolerance for timestamps that are not exact multiples of the source frame time.
-                            if (nextFrame != long.MinValue && time + 10_000 < nextFrame) { Marshal.Release(sample); continue; }
-                            nextFrame = nextFrame == long.MinValue || nextFrame + frame < time ? time + frame : nextFrame + frame;
-                            SetSampleDuration(sample, frame);
-                        }
-                        t.Sample = sample; t.Time = time;
-                    }
-                var next = tracks.Where(t => t.Sample != 0).MinBy(t => t.Time);
-                if (next == null) break;
-                WriteSample(writer, next.Writer, next.Sample);
-                Release(ref next.Sample);
-            }
+                if (!route.Video) return SampleFate.Write;
+                // 1 ms tolerance for timestamps that are not exact multiples of the source frame time.
+                if (nextFrame != long.MinValue && time + 10_000 < nextFrame) return SampleFate.Drop;
+                nextFrame = nextFrame == long.MinValue || nextFrame + frame < time ? time + frame : nextFrame + frame;
+                SetSampleDuration(sample, frame); return SampleFate.Write;
+            }, cancel);
             FinishWriting(writer);
         }
         finally
         {
-            foreach (var t in tracks) Release(ref t.Sample);
             Release(ref audio); Release(ref encoded); Release(ref decoded); Release(ref native); Release(ref attributes); Release(ref writer); Release(ref reader); Release(ref manager); Release(ref device);
         }
     }
