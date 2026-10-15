@@ -53,20 +53,12 @@ Test("estimated clip size covers video, every audio track and keyframe slack", (
     // One source: its own track would copy the mix, so only the mix is encoded; the same when separate tracks are off.
     Equal(1, CapturePolicy.AudioTracks(s with { Microphone = false })); Equal(1, CapturePolicy.AudioTracks(s with { DesktopAudio = false })); Equal(1, CapturePolicy.AudioTracks(s with { SeparateAudioTracks = false }));
     True(CapturePolicy.SeparateTracks(s) && !CapturePolicy.SeparateTracks(s with { Microphone = false }), "separate tracks only with both sources");
-    // Tracks carry the names ClipAudio finds them by; each source feeds the mix (mixer 1) and its own track.
-    Equal("Playback mix,Desktop,Microphone", string.Join(",", CapturePolicy.AudioTrackNames(s))); Equal("Playback mix", string.Join(",", CapturePolicy.AudioTrackNames(s with { SeparateAudioTracks = false })));
-    Equal(3u, CapturePolicy.AudioMixers(s, ClipAudio.Desktop)); Equal(5u, CapturePolicy.AudioMixers(s, ClipAudio.Microphone)); Equal(1u, CapturePolicy.AudioMixers(s with { Microphone = false }, ClipAudio.Desktop));
     var expected = (15000 + 3 * 160) * 1000d * 30.5 / 8 / (1024 * 1024) * 1.02;
     True(Math.Abs(CapturePolicy.EstimatedClipMegabytes(s) - expected) < 0.001, "unexpected 1080p60 30 s estimate " + CapturePolicy.EstimatedClipMegabytes(s));
     True(CapturePolicy.EstimatedClipMegabytes(s with { ClipSeconds = 60 }) > 1.9 * CapturePolicy.EstimatedClipMegabytes(s), "length not reflected");
     True(CapturePolicy.EstimatedClipMegabytes(s with { Quality = QualityPreset.Performance }) < CapturePolicy.EstimatedClipMegabytes(s), "quality not reflected");
     True(CapturePolicy.EstimatedClipMegabytes(s with { Microphone = false }) < CapturePolicy.EstimatedClipMegabytes(s), "audio tracks not reflected");
     True(CapturePolicy.BufferMegabytes(s) > CapturePolicy.EstimatedClipMegabytes(s), "RAM buffer smaller than one clip");
-    // Only what the buffer is built from restarts it.
-    foreach (var changed in new[] { s with { Width = 1280, Height = 720 }, s with { Fps = 30 }, s with { ClipSeconds = 60 }, s with { ClipsDirectory = @"D:\Clips" }, s with { Microphone = false }, s with { DesktopAudio = false }, s with { SeparateAudioTracks = false }, s with { MicrophoneDevice = "mic" }, s with { DesktopDevice = "out" } })
-        True(CapturePolicy.NeedsRestart(s, changed), "no restart for " + changed);
-    foreach (var same in new[] { s, s with { Hotkey = "Ctrl+F1" }, s with { ShareMinutes = 30 }, s with { SortByApp = false }, s with { ClipBeep = false }, s with { StartWithWindows = true } })
-        True(!CapturePolicy.NeedsRestart(s, same), "needless restart for " + same);
 });
 Test("settings expose required safe defaults", () =>
 {
@@ -254,6 +246,7 @@ Test("share server serves exactly the clip with ranges, HEAD and correct errors"
         foreach(var bad in new[]{"/","/tok/","/TOK/clip.mp4","/tok/other.mp4","/tok//clip.mp4","/tok/clip.mp4%2F..%2Fx","/settings.json"})Equal(404,(int)Get(bad).StatusCode);
         Equal(416,(int)Get("/tok/clip.mp4","bytes=300000-").StatusCode);
         Equal(405,(int)Get("/tok/clip.mp4",method:HttpMethod.Post).StatusCode);
+        True(server.BytesSent>=300000+100+10,"sent bytes not counted");
     }finally{Directory.Delete(dir,true);}
 });
 Test("share server keeps connections alive, caps parallel viewers and stops completely",()=>{

@@ -25,15 +25,11 @@ internal static class Look
     // The colour behind a control's rounded corners: the nearest opaque parent.
     public static Color Behind(Control control) { for (var p = control.Parent; p != null; p = p.Parent) if (p.BackColor.A == 255) return p.BackColor; return Page; }
     public static Color Shade(Color c, int delta) => Color.FromArgb(c.A, Math.Clamp(c.R + delta, 0, 255), Math.Clamp(c.G + delta, 0, 255), Math.Clamp(c.B + delta, 0, 255));
-}
-
-// A panel that lays out its blocks itself and knows which of them are meant to be shown: Visible reads false while
-// the window is still hidden, but the popup measures its home page before it appears.
-internal abstract class BlockPanel : Panel
-{
-    readonly HashSet<Control> hidden = [];
-    public void SetShown(Control block, bool shown) { if (shown) hidden.Remove(block); else hidden.Add(block); block.Visible = shown; PerformLayout(); }
-    protected bool IsShown(Control block) => !hidden.Contains(block);
+    // Whether a block is meant to be shown. Visible itself reads false while the window is still hidden, but the
+    // popup measures its pages before it appears; so blocks are shown and hidden through Show().
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, object> hidden = new();
+    public static void Show(Control c, bool shown) { if (shown) hidden.Remove(c); else hidden.AddOrUpdate(c, c); c.Visible = shown; c.Parent?.PerformLayout(); }
+    public static bool IsShown(Control c) => !hidden.TryGetValue(c, out _);
 }
 
 // One rounded block: a caption on the left, an optional control on the right (or stretched across the rest).
@@ -49,9 +45,8 @@ internal sealed class Card : Panel
         BackColor = Look.Card; ForeColor = Look.Text; controlWidth = logicalControlWidth; this.stretch = stretch; Control = control;
         Caption.Text = caption; Caption.BackColor = Look.Card; Controls.Add(Caption);
         if (control != null) { Controls.Add(control); control.AccessibleName ??= caption; }
-        Caption.Click += (_, _) => Activate(); Click += (_, _) => Activate(); if (control is CheckBox) Cursor = Cursors.Hand;
+        Caption.Click += (_, _) => Activate(); Click += (_, _) => Activate(); Cursor = control is CheckBox ? Cursors.Hand : Cursors.Default;
     }
-    // Clicking a switch's block flips the switch, like clicking the switch itself.
     void Activate() { if (Control is CheckBox box && box.Enabled) box.Checked = !box.Checked; else Control?.Focus(); }
     public override Size GetPreferredSize(Size proposed) => new(proposed.Width, LogicalToDeviceUnits(Look.RowHeight));
     protected override void OnLayout(LayoutEventArgs e)
@@ -62,8 +57,8 @@ internal sealed class Card : Panel
         {
             int w = stretch ? Math.Max(LogicalToDeviceUnits(40), right - TextRenderer.MeasureText(Caption.Text, Caption.Font).Width - inset * 2)
                 : controlWidth > 0 ? LogicalToDeviceUnits(controlWidth) : c.GetPreferredSize(Size.Empty).Width;
-            // Drop-downs keep their own height whatever is asked; centre on the height the control actually took.
-            c.SetBounds(right - w, 0, w, Math.Min(c.GetPreferredSize(Size.Empty).Height, Height - LogicalToDeviceUnits(8))); c.Top = (Height - c.Height) / 2;
+            int h = Math.Min(c is CheckBox ? c.Height : Math.Max(c.Height, c.GetPreferredSize(Size.Empty).Height), Height - LogicalToDeviceUnits(8));
+            c.SetBounds(right - w, (Height - h) / 2, w, h);
             Caption.SetBounds(inset, 0, Math.Max(0, c.Left - inset - LogicalToDeviceUnits(6)), Height);
         }
         else Caption.SetBounds(inset, 0, Width - inset * 2, Height);
@@ -72,21 +67,21 @@ internal sealed class Card : Panel
 }
 
 // Buttons side by side, sharing the width evenly; only the visible ones take part.
-internal sealed class ButtonRow : BlockPanel
+internal sealed class ButtonRow : Panel
 {
     public ButtonRow(params Button[] buttons) { BackColor = Look.Page; foreach (var b in buttons) Controls.Add(b); }
     public override Size GetPreferredSize(Size proposed) => new(proposed.Width, LogicalToDeviceUnits(Look.RowHeight));
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);
-        var shown = Controls.Cast<Control>().Where(IsShown).ToList();
+        var shown = Controls.Cast<Control>().Where(Look.IsShown).ToList();
         int gap = LogicalToDeviceUnits(Look.Gap), x = 0, count = Math.Max(1, shown.Count), width = (Width - gap * (count - 1)) / count;
         foreach (var c in shown) { c.SetBounds(x, 0, width, Height); x += width + gap; }
     }
 }
 
 // The page: a scrolling column of blocks with even gaps; section titles get a little more room above.
-internal sealed class Page : BlockPanel
+internal sealed class Page : Panel
 {
     readonly List<(Control Control, int Gap)> items = [];
     public int ContentHeight { get; private set; }
@@ -105,7 +100,7 @@ internal sealed class Page : BlockPanel
         int pad = LogicalToDeviceUnits(Look.Pad), width = Math.Max(LogicalToDeviceUnits(100), ClientSize.Width - pad * 2), y = pad; bool first = true;
         foreach (var (c, gap) in items)
         {
-            if (!IsShown(c)) continue;
+            if (!Look.IsShown(c)) continue;
             if (c is Label { Text.Length: 0 }) { c.SetBounds(pad, y + AutoScrollPosition.Y, width, 0); continue; }
             if (!first) y += LogicalToDeviceUnits(gap); first = false;
             int h = c is Label l ? TextRenderer.MeasureText(l.Text, l.Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix).Height : c.GetPreferredSize(new Size(width, 0)).Height;
@@ -116,22 +111,21 @@ internal sealed class Page : BlockPanel
     }
 }
 
-// A page title with an optional round icon button on either side (back on the left, the settings gear on the right).
+// A title on the left and a round icon button on the right (the settings gear, or back).
 internal sealed class Header : Panel
 {
-    readonly Label title; readonly Button? left, right;
-    public Header(string text, float points, Button? left = null, Button? right = null)
+    public Label Title { get; }
+    public Header(string title, Button? icon, Button? back = null)
     {
-        BackColor = Look.Page; this.left = left; this.right = right;
-        title = new Label { Text = text, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Font = Look.Strong(points), UseMnemonic = false };
-        Controls.Add(title); if (left != null) Controls.Add(left); if (right != null) Controls.Add(right);
+        BackColor = Look.Page; Title = new Label { Text = title, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Font = Look.Strong(back == null ? 12 : 11), UseMnemonic = false };
+        Controls.Add(Title); if (icon != null) Controls.Add(icon); if (back != null) Controls.Add(back);
     }
     public override Size GetPreferredSize(Size proposed) => new(proposed.Width, LogicalToDeviceUnits(34));
     protected override void OnLayout(LayoutEventArgs e)
     {
-        base.OnLayout(e); int size = LogicalToDeviceUnits(32), gap = LogicalToDeviceUnits(6), top = (Height - size) / 2;
-        left?.SetBounds(0, top, size, size); right?.SetBounds(Width - size, top, size, size);
-        int x = left == null ? 0 : size + gap; title.SetBounds(x, 0, Width - x - (right == null ? 0 : size + gap), Height);
+        base.OnLayout(e); int size = LogicalToDeviceUnits(32), left = 0;
+        foreach (var b in Controls.OfType<Button>()) { if (b.Tag is "back") { b.SetBounds(0, (Height - size) / 2, size, size); left = size + LogicalToDeviceUnits(6); } else b.SetBounds(Width - size, (Height - size) / 2, size, size); }
+        Title.SetBounds(left, 0, Width - left - size - LogicalToDeviceUnits(6), Height);
     }
 }
 
@@ -163,7 +157,7 @@ internal sealed class Field : Panel
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         Box = box; BackColor = Look.Field; box.BorderStyle = BorderStyle.None; box.BackColor = Look.Field; box.ForeColor = Look.Text; Controls.Add(box); Click += (_, _) => box.Focus();
     }
-    public override Size GetPreferredSize(Size proposed) => new(LogicalToDeviceUnits(120), LogicalToDeviceUnits(Look.RowHeight - 8));
+    public override Size GetPreferredSize(Size proposed) => new(LogicalToDeviceUnits(120), LogicalToDeviceUnits(Look.RowHeight - 10));
     protected override void OnLayout(LayoutEventArgs e) { base.OnLayout(e); int pad = LogicalToDeviceUnits(8); Box.SetBounds(pad, (Height - Box.Height) / 2, Math.Max(0, Width - pad * 2), Box.Height); }
     protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(Look.Behind(this)); Look.Fill(e.Graphics, new RectangleF(0, 0, Width, Height), LogicalToDeviceUnits(Look.Radius - 2), BackColor); }
 }
@@ -192,7 +186,7 @@ internal sealed class Stepper : Panel
     }
     protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (At(e.X) != hover) { hover = At(e.X); Invalidate(); } }
     protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hover = 0; Invalidate(); }
-    public override Size GetPreferredSize(Size proposed) => new(LogicalToDeviceUnits(112), LogicalToDeviceUnits(Look.RowHeight - 8));
+    public override Size GetPreferredSize(Size proposed) => new(LogicalToDeviceUnits(112), LogicalToDeviceUnits(Look.RowHeight - 10));
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);

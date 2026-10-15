@@ -31,7 +31,7 @@ internal sealed class ShareEditorForm : Form
     public ShareEditorForm(string? clip, string clipsFolder, string exportFolder, Func<string, string> titleOf, Func<string, ClipTrim.Media>? probe = null, bool preview = true)
     {
         this.clipsFolder = clipsFolder; this.exportFolder = exportFolder; this.titleOf = titleOf; this.probe = probe ?? ClipTrim.Probe; this.preview = preview;
-        Text = "Export clip"; BackColor = Black; ForeColor = White; Font = new Font("Segoe UI", 10); AutoScaleMode = AutoScaleMode.Dpi; Icon = WindowChrome.AppIcon();
+        Text = "Export clip"; BackColor = Black; ForeColor = White; Font = new Font("Segoe UI", 10); AutoScaleMode = AutoScaleMode.Dpi; Icon = SettingsForm.AppIcon();
         StartPosition = FormStartPosition.CenterScreen; MinimizeBox = false; MaximizeBox = false; KeyPreview = true; ShowInTaskbar = true;
         ClientSize = new Size(LogicalToDeviceUnits(640), LogicalToDeviceUnits(590)); MinimumSize = new Size(LogicalToDeviceUnits(460), LogicalToDeviceUnits(420));
 
@@ -126,7 +126,7 @@ internal sealed class ShareEditorForm : Form
     // The edit Share or Save would produce right now.
     public ClipEdit CurrentEdit => new(bar.Start, bar.End, Track);
 
-    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); WindowChrome.DarkTitleBar(Handle); }
+    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); SettingsForm.DarkTitleBar(Handle); }
     protected override void OnShown(EventArgs e) { base.OnShown(e); Activate(); if (Clip != null) StartPreview(); clock.Start(); }
     void StartPreview()
     {

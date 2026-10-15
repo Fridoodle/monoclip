@@ -14,32 +14,30 @@ public sealed class TrayAppContext : ApplicationContext
     readonly SoundEffects sounds = new(); readonly Action<Sound> playSound;
     readonly IClipEngine engine; AppSettings settings; readonly string settingsPath; readonly NotifyIcon tray; readonly HotkeyRegistration hotkeys;
     readonly ToolStripMenuItem toggleItem, saveItem; SettingsForm? form; bool disposed; string? lastClip;
-    readonly IClipSharer? sharer; readonly ToolStripMenuItem shareItem, copyLinkItem; ShareInfo? lastShare; int lastShareMinutes;
+    readonly IClipSharer? sharer; readonly ToolStripMenuItem shareItem, editItem, copyLinkItem; ShareInfo? lastShare; int lastShareMinutes;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 30000 }, animation = new() { Interval = 90 };
     readonly Dictionary<(TrayIconKind, bool), Icon> icons = []; Icon[] spinner = [];
-    int spinnerFrame; string? errorText; DateTime errorUntil;
+    int spinnerFrame; string? errorText; DateTime errorUntil; string lastStatus = "";
     // Replaceable so tests never touch the real clipboard.
     public Action<string> CopyText { get; set; } = text => Clipboard.SetText(text);
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
-    // soundOverride hears the cues instead of the speakers (tests). Without a sharer there is no sharing.
-    public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath, bool showSettings = false, Action<Sound>? soundOverride = null, IClipSharer? sharer = null)
+    public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath) : this(engine, settings, settingsPath, false) { }
+    public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath, bool showSettings) : this(engine, settings, settingsPath, showSettings, null) { }
+    public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath, bool showSettings, Action<Sound>? soundOverride) : this(engine, settings, settingsPath, showSettings, soundOverride, null) { }
+    public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath, bool showSettings, Action<Sound>? soundOverride, IClipSharer? sharer)
     {
         playSound = soundOverride ?? sounds.Play; this.sharer = sharer;
         this.engine = engine; this.settings = settings with { }; this.settingsPath = settingsPath;
         BuildIcons(); shareTicker.Tick += (_, _) => UpdateTray(); animation.Tick += (_, _) => Animate();
         var menu = new ContextMenuStrip { BackColor = Color.FromArgb(16, 16, 16), ForeColor = Color.White, ShowImageMargin = false, Renderer = new ToolStripProfessionalRenderer(new MonoMenuColors()) };
-        ToolStripMenuItem Item(string text, Action click) { var item = new ToolStripMenuItem(text, null, (_, _) => click()); menu.Items.Add(item); return item; }
-        toggleItem = Item("Start buffer", () => Run(Toggle)); saveItem = Item("Save clip", () => Run(engine.SaveClip));
-        shareItem = Item($"Quick share last clip ({settings.ShareMinutes} min)", ToggleShare); shareItem.Visible = sharer != null;
-        Item("Export clip", EditLastClip); copyLinkItem = Item("Copy link", () => Run(CopyShareLink)); copyLinkItem.Visible = false;
-        menu.Opening += (_, _) => UpdateShareItems();
-        menu.Items.Add(new ToolStripSeparator()); Item("Settings", () => ShowSettingsAt(Cursor.Position)); Item("Open clip folder", () => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip)));
-        menu.Items.Add(new ToolStripSeparator()); Item("Exit", ExitThread);
+        toggleItem = new ToolStripMenuItem("Start buffer", null, (_, _) => Run(Toggle)); menu.Items.Add(toggleItem); saveItem = new ToolStripMenuItem("Save clip", null, (_, _) => Run(engine.SaveClip)); menu.Items.Add(saveItem);
+        shareItem = new ToolStripMenuItem($"Quick share last clip ({settings.ShareMinutes} min)", null, (_, _) => ToggleShare()) { Visible = sharer != null }; menu.Items.Add(shareItem);
+        editItem = new ToolStripMenuItem("Export clip", null, (_, _) => EditLastClip()); menu.Items.Add(editItem); copyLinkItem = new ToolStripMenuItem("Copy link", null, (_, _) => Run(CopyShareLink)) { Visible = false }; menu.Items.Add(copyLinkItem); menu.Opening += (_, _) => UpdateShareItems();
+        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Settings", null, (_, _) => ShowSettingsAt(Cursor.Position)); menu.Items.Add("Open clip folder", null, (_, _) => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip))); menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("Exit", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettingsAt(Cursor.Position);
-        // While the settings window records a new hotkey, pressing the old one must not save a clip.
-        hotkeys = new(() => Run(engine.SaveClip)) { Suppressed = () => form is { IsDisposed: false } f && f.RecordingHotkey };
+        hotkeys = new(() => Run(engine.SaveClip));
         try { hotkeys.Set(Hotkey.Parse(settings.Hotkey)); } catch (Exception e) { Fail("Hotkey unavailable: " + e.Message); }
-        engine.StatusChanged += StatusChanged; engine.Failed += EngineFailed; engine.ClipSaved += ClipSaved; if (sharer != null) sharer.Changed += ShareChanged;
+        engine.StatusChanged += StatusChanged; engine.ClipSaved += ClipSaved; if (sharer != null) sharer.Changed += ShareChanged;
         if (settings.StartBufferOnLaunch) Run(() => engine.Start(this.settings));
         UpdateTray(); if (showSettings || !settings.StartMinimized) ShowSettings();
     }
@@ -53,7 +51,12 @@ public sealed class TrayAppContext : ApplicationContext
         using (var g = Graphics.FromImage(image))
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; g.Clear(Color.Transparent);
-            using (var tile = Look.Rounded(new RectangleF(0, 0, size, size), size * 0.22f)) using (var black = new SolidBrush(Color.FromArgb(12, 12, 12))) g.FillPath(black, tile);
+            float radius = size * 0.22f; using (var tile = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                tile.AddArc(0, 0, radius * 2, radius * 2, 180, 90); tile.AddArc(size - radius * 2, 0, radius * 2, radius * 2, 270, 90);
+                tile.AddArc(size - radius * 2, size - radius * 2, radius * 2, radius * 2, 0, 90); tile.AddArc(0, size - radius * 2, radius * 2, radius * 2, 90, 90); tile.CloseFigure();
+                using var black = new SolidBrush(Color.FromArgb(12, 12, 12)); g.FillPath(black, tile);
+            }
             var white = Color.FromArgb(245, 245, 245);
             float stroke = Math.Max(1.5f, size / 9f), diameter = size * 0.56f, inset = (size - diameter) / 2f;
             using var fill = new SolidBrush(white); using var pen = new Pen(white, stroke) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
@@ -85,59 +88,45 @@ public sealed class TrayAppContext : ApplicationContext
     }
     // The settings popup opens by the tray corner, or next to the tray icon (or menu) the user just clicked.
     public void ShowSettings() => ShowSettingsAt(null);
-    void ShowSettingsAt(Point? anchor)
-    {
-        if (form == null || form.IsDisposed)
-        {
-            form = new(settings, engine, SaveSettings, Toggle, engine.SaveClip);
-            if (sharer != null) form.AttachSharing(sharer, ToggleShare, EditLastClip, () => Run(CopyShareLink), ExportFile);
-        }
-        form.ShowNear(anchor);
-    }
+    void ShowSettingsAt(Point? anchor) { if (form == null || form.IsDisposed) { form = new(settings, engine, SaveSettings, Toggle, engine.SaveClip); if (sharer != null) form.AttachSharing(sharer, ToggleShare, EditLastClip, () => Run(CopyShareLink), path => Export(path, chosen: true)); } form.ShowNear(anchor); }
     // Manual start/stop (tray, settings window). Starting on launch plays the launch sound instead.
     void Toggle() { if (engine.IsRunning) { engine.Stop(); Cue(Sound.BufferOff); } else { engine.Start(settings); Cue(Sound.BufferOn); } UpdateTray(); }
     // Played on the very first start of a new install: the app only appears in the tray, which new users miss.
     public void AnnounceStart() => Cue(Sound.Launch);
-    // Applies new settings everywhere or nowhere: each step that took effect is undone when a later one fails.
     void SaveSettings(AppSettings next)
     {
-        next.Validate(); var parsed = Hotkey.Parse(next.Hotkey); var old = settings with { }; var undo = new List<Action>();
+        next.Validate(); var parsed = Hotkey.Parse(next.Hotkey); var old = settings with { }; bool applied = false, autostartChanged = false;
         try
         {
-            hotkeys.Set(parsed); undo.Add(() => hotkeys.Set(Hotkey.Parse(old.Hotkey)));
-            engine.Apply(next); undo.Add(() => engine.Apply(old));
-            if ((next.StartWithWindows || old.StartWithWindows) && WindowsIntegration.SyncAutostart(next.StartWithWindows, Environment.ProcessPath!))
-                undo.Add(() => WindowsIntegration.SetAutostart(old.StartWithWindows, Environment.ProcessPath!));
+            hotkeys.Set(parsed); engine.Apply(next); applied = true;
+            if (next.StartWithWindows || old.StartWithWindows) autostartChanged = WindowsIntegration.SyncAutostart(next.StartWithWindows, Environment.ProcessPath!);
             SettingsStore.Save(settingsPath, next); settings = next with { }; UpdateTray();
         }
-        catch (Exception original)
-        {
-            var failed = new List<string>();
-            foreach (var step in undo) try { step(); } catch (Exception e) { failed.Add(e.Message); }
-            throw new InvalidOperationException(original.Message + (failed.Count == 0 ? "" : " Rollback failed: " + string.Join("; ", failed)), original);
-        }
+        catch (Exception original) { var rollbackErrors = new List<string>(); try { hotkeys.Set(Hotkey.Parse(old.Hotkey)); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (applied) try { engine.Apply(old); } catch (Exception e) { rollbackErrors.Add(e.Message); } if (autostartChanged) try { WindowsIntegration.SetAutostart(old.StartWithWindows, Environment.ProcessPath!); } catch (Exception e) { rollbackErrors.Add(e.Message); } throw new InvalidOperationException(original.Message + (rollbackErrors.Count == 0 ? "" : " Rollback failed: " + string.Join("; ", rollbackErrors)), original); }
     }
-    void StatusChanged(object? sender, EventArgs args) => UpdateTray();
     // Background failures (export, unexpected stop) only show up as a status text: make them heard.
-    void EngineFailed(object? sender, string message) => Fail(message);
+    void StatusChanged(object? sender, EventArgs args)
+    {
+        var status = engine.Status;
+        if (status != lastStatus && (status.StartsWith("Error") || status.StartsWith("Clip error") || status.StartsWith("Clip kept at") || status.StartsWith("Capture stopped unexpectedly") || status.StartsWith("Saving the clip is taking"))) Fail(status);
+        lastStatus = status; UpdateTray();
+    }
     // Quick share (tray/settings): stop a running share, otherwise share the last saved clip as it is.
     void ToggleShare()
     {
         if (sharer == null) return;
         if (sharer.Current != null || sharer.IsStarting) { sharer.Stop(); Cue(Sound.ShareStopped); return; }
-        if (LastClip is { } clip) _ = ShareClip(clip); else Fail("No clip saved yet.");
+        if (ClipToShare() is { } clip) _ = ShareClip(clip, chosen: false);
     }
     // The last saved clip, or the newest one on disk.
-    string? LastClip => lastClip != null && File.Exists(lastClip) ? lastClip : ClipLibrary.LatestClip(settings.ClipsDirectory);
-    // "Export clip" opens the editor with the last clip; without one it opens empty, ready to choose a clip.
-    void EditLastClip() => Export(LastClip);
-    // A file the user picked or dropped on the settings window. An open editor takes it as it is (and says itself what is
-    // wrong with it); otherwise only a file that can be shared opens the editor.
-    internal void ExportFile(string file)
+    string? ClipToShare()
     {
-        if (editor == null) { try { SharePolicy.CheckShareable(file); } catch (ArgumentException e) { Fail(e.Message); return; } }
-        Export(file);
+        var clip = lastClip != null && File.Exists(lastClip) ? lastClip : ClipLibrary.LatestClip(settings.ClipsDirectory);
+        if (clip == null) Fail("No clip saved yet.");
+        return clip;
     }
+    // "Export clip" opens the editor with the last clip; without one it opens empty, ready to choose a clip.
+    void EditLastClip() => Export(lastClip != null && File.Exists(lastClip) ? lastClip : ClipLibrary.LatestClip(settings.ClipsDirectory), chosen: false);
     // What the export editor decided: the edit, a file to save it to (null: share it) and the clip it applies to
     // (the user can switch clips in the editor).
     internal sealed record ExportChoice(ClipEdit Edit, string? SavePath, string? Clip = null);
@@ -145,10 +134,11 @@ public sealed class TrayAppContext : ApplicationContext
     internal Func<string?, ExportChoice?>? EditClip { get; set; }
     ShareEditorForm? editor;
     // The editor trims the clip and picks its audio, then the clip is shared or saved as an MP4. A clip chosen
-    // while the editor is open replaces the one in it.
-    void Export(string? clip)
+    // while the editor is open (dropped on the settings window) replaces the one in it.
+    internal void Export(string? clip, bool chosen)
     {
         if (editor != null) { if (clip != null) editor.Open(clip); editor.Activate(); return; }
+        if (chosen && clip != null) { try { SharePolicy.CheckShareable(clip); } catch (ArgumentException e) { Fail(e.Message); return; } }
         ExportChoice? choice; TimeSpan duration = TimeSpan.MaxValue; int? defaultTrack = 0;
         if (EditClip != null) choice = EditClip(clip) is { } c ? c with { Clip = c.Clip ?? clip } : null;
         else
@@ -166,7 +156,7 @@ public sealed class TrayAppContext : ApplicationContext
         if (choice?.Clip is not { } exported) return;
         if (choice.SavePath != null) { _ = SaveEdited(exported, choice.Edit, choice.SavePath); return; }
         // Untouched clips are shared unchanged (all tracks, no trim pass).
-        _ = ShareClip(exported, choice.Edit.ChangesClip(duration, defaultTrack) ? choice.Edit : null);
+        _ = ShareClip(exported, chosen: false, choice.Edit.ChangesClip(duration, defaultTrack) ? choice.Edit : null);
     }
     // Writes the edited clip (lossless) and remembers the folder for the next export.
     async Task SaveEdited(string clip, ClipEdit edit, string path)
@@ -185,9 +175,10 @@ public sealed class TrayAppContext : ApplicationContext
         catch (Exception e) when (e is not OutOfMemoryException) { Fail("Export failed: " + e.Message); }
     }
     // Creates the link and copies it. Sounds: upload on start, link when copied, error otherwise.
-    internal async Task ShareClip(string clip, ClipEdit? edit = null)
+    internal async Task ShareClip(string clip, bool chosen, ClipEdit? edit = null)
     {
         if (sharer == null) return;
+        if (chosen) { try { SharePolicy.CheckShareable(clip); } catch (ArgumentException e) { Fail(e.Message); return; } }
         int minutes = settings.ShareMinutes;
         Cue(Sound.Upload); form?.Feedback(sharer.FirstUse ? "Creating link… (first time: downloading cloudflared, ~55 MB)" : $"Creating link… ({minutes} min)");
         try
@@ -221,17 +212,18 @@ public sealed class TrayAppContext : ApplicationContext
         if (sharer.Current != null) shareTicker.Start(); else shareTicker.Stop();
         UpdateTray();
     }
+    static int MinutesLeft(ShareInfo share) => Math.Max(1, (int)Math.Ceiling((share.ExpiresAt - DateTimeOffset.Now).TotalMinutes));
     void UpdateShareItems()
     {
         if (sharer == null) return;
-        shareItem.Text = sharer.IsStarting ? "Cancel sharing" : sharer.Current is { } c ? $"Stop sharing ({c.MinutesLeft} min left)" : $"Quick share last clip ({settings.ShareMinutes} min)";
+        shareItem.Text = sharer.IsStarting ? "Cancel sharing" : sharer.Current is { } c ? $"Stop sharing ({MinutesLeft(c)} min left)" : $"Quick share last clip ({settings.ShareMinutes} min)";
         copyLinkItem.Visible = sharer.Current != null;
     }
     void ClipSaved(object? sender, ClipSavedEventArgs args)
     {
         lastClip = args.Clip.Path; Cue(Sound.Clip); form?.Feedback("Saved: " + args.Clip.Path);
         // Auto-share replaces a link that is still online: the newest clip is the one to post.
-        if (settings.AutoShare && sharer != null) { sharer.Stop(); _ = ShareClip(args.Clip.Path); }
+        if (settings.AutoShare && sharer != null) { sharer.Stop(); _ = ShareClip(args.Clip.Path, chosen: false); }
     }
     // The sound setting switches all cues off; feedback then stays in the tray symbol and tooltip.
     void Cue(Sound sound) { if (settings.ClipBeep) playSound(sound); }
@@ -249,7 +241,7 @@ public sealed class TrayAppContext : ApplicationContext
     void UpdateTray()
     {
         if (disposed) return; bool active = engine.IsRunning; UpdateIcon();
-        SetTooltip(errorText != null ? "MonoClip · " + errorText : "MonoClip · " + (sharer?.IsStarting == true ? "Creating link · " : sharer?.Current is { } shared ? $"shared, {shared.MinutesLeft} min left · " : "") + engine.Status);
+        SetTooltip(errorText != null ? "MonoClip · " + errorText : "MonoClip · " + (sharer?.IsStarting == true ? "Creating link · " : sharer?.Current is { } shared ? $"shared, {MinutesLeft(shared)} min left · " : "") + engine.Status);
         toggleItem.Text = active ? "Stop buffer" : "Start buffer"; saveItem.Text = $"Save last {settings.ClipSeconds} s"; saveItem.Enabled = active; UpdateShareItems(); form?.UpdateStatus();
     }
     void Run(Action action) { try { action(); } catch (Exception e) { Fail(e.Message); } UpdateTray(); }
@@ -258,7 +250,7 @@ public sealed class TrayAppContext : ApplicationContext
     {
         if (disposing && !disposed)
         {
-            engine.Dispose(); disposed = true; engine.StatusChanged -= StatusChanged; engine.Failed -= EngineFailed; engine.ClipSaved -= ClipSaved; if (sharer != null) { sharer.Changed -= ShareChanged; sharer.Dispose(); }
+            engine.Dispose(); disposed = true; engine.StatusChanged -= StatusChanged; engine.ClipSaved -= ClipSaved; if (sharer != null) { sharer.Changed -= ShareChanged; sharer.Dispose(); }
             shareTicker.Dispose(); animation.Dispose(); hotkeys.Dispose(); form?.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose();
             foreach (var icon in icons.Values.Concat(spinner)) icon.Dispose(); sounds.Dispose();
         }

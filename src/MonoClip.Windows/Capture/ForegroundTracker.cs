@@ -42,7 +42,7 @@ internal static class ForegroundTracker
         }
         return (id, screen.DeviceName);
     }
-    internal static string StableMonitorId(string? deviceId, string displayName) => string.IsNullOrWhiteSpace(deviceId) ? displayName : deviceId;
+    internal static string StableMonitorId(string? deviceId,string displayName)=>string.IsNullOrWhiteSpace(deviceId)?displayName:deviceId;
     // The window the user is in (the foreground window: keyboard and controller input go there), or null when
     // there is none, e.g. for a moment while switching windows.
     public static (IntPtr Handle, WindowInfo? Info) ActiveWindow()
@@ -60,8 +60,9 @@ internal static class ForegroundTracker
     static string ClassName(IntPtr h) { var cls = new StringBuilder(256); GetClassName(h, cls, cls.Capacity); return cls.ToString(); }
     static WindowInfo Describe(IntPtr h)
     {
+        var cls = new StringBuilder(256); GetClassName(h, cls, cls.Capacity);
         GetWindowRect(h, out var r); bool tool = (GetWindowLongPtr(h, GwlExStyle).ToInt64() & WsExToolWindow) != 0;
-        return new(ClassName(h), Text(h), Executable(h), tool, r.Right - r.Left, r.Bottom - r.Top);
+        return new(cls.ToString(), Text(h), Executable(h), tool, r.Right - r.Left, r.Bottom - r.Top);
     }
     static string Executable(IntPtr h)
     {

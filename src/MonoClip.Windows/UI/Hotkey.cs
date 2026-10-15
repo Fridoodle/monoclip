@@ -19,7 +19,7 @@ public readonly record struct Hotkey(uint Modifiers, Keys Key)
                 "WIN" or "WINDOWS" => 8u,
                 _ => throw new ArgumentException("Invalid key combination.")
             };
-            if ((modifiers & modifier) != 0) throw new ArgumentException("A modifier is given twice.");
+            if ((modifiers & modifier) != 0) throw new ArgumentException("Modifikator doppelt angegeben.");
             modifiers |= modifier;
         }
         var name = tokens[^1];

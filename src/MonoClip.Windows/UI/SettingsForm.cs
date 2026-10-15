@@ -1,98 +1,98 @@
 using MonoClip.Core;
+using System.Runtime.InteropServices;
 namespace MonoClip.Windows.UI;
 
 // The settings popup, opened from the tray like Mullvad's: it appears right above the taskbar next to the tray with
-// the everyday actions and the basic settings; the gear opens every setting on a second page. The controls edit one
-// draft (SettingsBinder), which is applied by itself after a short pause, as some changes restart the buffer; so
-// clicking elsewhere simply closes the popup.
+// the everyday actions and the basic settings; the gear opens everything else on a second page. Changes apply at
+// once (after a short pause, as some restart the buffer), so clicking elsewhere simply closes the popup.
 public sealed class SettingsForm : Form
 {
     const int LogicalWidth = 360, ScreenMargin = 12, CommitDelay = 500;
-    static readonly (string, (int, int))[] Resolutions = [("1280 × 720", (1280, 720)), ("1920 × 1080", (1920, 1080)), ("2560 × 1440", (2560, 1440)), ("3840 × 2160", (3840, 2160))];
-    static readonly (string, int)[] FrameRates = [("30", 30), ("60", 60), ("120", 120)];
-    AppSettings original; readonly SettingsBinder binder; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
+    AppSettings original; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
     readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox();
-    // Clip length, hotkey, folder and autostart have a control on each page (the "2" ones on the settings page).
-    readonly NumericUpDown duration = new MonoNumeric(), duration2 = new MonoNumeric(), shareMinutes = new MonoNumeric();
-    readonly TextBox hotkey = new(), hotkey2 = new(), directory = new(), directory2 = new();
-    readonly CheckBox autostart = new MonoToggle(), autostart2 = new MonoToggle(), separateTracks = new MonoToggle(), mic = new MonoToggle(), desktop = new MonoToggle(), minimized = new MonoToggle(),
-        bufferOnLaunch = new MonoToggle(), clipBeep = new MonoToggle(), autoShare = new MonoToggle(), sortByApp = new MonoToggle(), directLink = new MonoToggle(), copyLink = new MonoToggle();
+    readonly NumericUpDown duration = new MonoNumeric(), shareMinutes = new MonoNumeric(); readonly TextBox hotkey = new(), directory = new();
+    // The basics again on the settings page, so that page has every setting; each is kept in step with home's.
+    readonly NumericUpDown duration2 = new MonoNumeric(); readonly TextBox hotkey2 = new(), directory2 = new(); readonly CheckBox autostart2 = new MonoToggle();
+    readonly CheckBox separateTracks = new MonoToggle(), mic = new MonoToggle(), desktop = new MonoToggle(), minimized = new MonoToggle(), autostart = new MonoToggle(), bufferOnLaunch = new MonoToggle(),
+        clipBeep = new MonoToggle(), autoShare = new MonoToggle(), sortByApp = new MonoToggle(), directLink = new MonoToggle(), copyLink = new MonoToggle();
     readonly MonoSlider quality = new("Performance", "Balanced", "Quality");
     readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton(), shareButton = new MonoButton(), editButton = new MonoButton(), copyLinkButton = new MonoButton(),
         openButton = new MonoButton(), pickButton = new MonoButton(), gear = new MonoButton(), back = new MonoButton();
     readonly Label status = new(), target = new(), budget = new(), budgetDetail = new(), shareStatus = new(), feedback = new(), moreFeedback = new();
     readonly Page home = new(), more = new(); readonly ButtonRow shareRow;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }, commitTimer = new() { Interval = CommitDelay };
-    IClipSharer? sharer; Action<string>? shareFile; Point? anchor; bool popup; int dialogs;
+    IClipSharer? sharer; Action<string>? shareFile; Point? anchor; bool loading = true, popup; int dialogs;
 
     public SettingsForm(AppSettings settings, IClipEngine engine, Action<AppSettings> saveSettings, Action toggle, Action saveClip)
     {
-        original = settings with { }; binder = new(settings with { }); this.engine = engine; this.saveSettings = saveSettings; this.toggle = toggle; this.saveClip = saveClip;
-        Text = "MonoClip"; BackColor = Look.Page; ForeColor = Look.Text; Font = Look.Body(); AutoScaleMode = AutoScaleMode.Dpi; Icon = WindowChrome.AppIcon();
+        original = settings with { }; this.engine = engine; this.saveSettings = saveSettings; this.toggle = toggle; this.saveClip = saveClip;
+        Text = "MonoClip"; BackColor = Look.Page; ForeColor = Look.Text; Font = Look.Body(); AutoScaleMode = AutoScaleMode.Dpi; Icon = AppIcon();
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual; KeyPreview = true; TopMost = true;
         ClientSize = new Size(Px(LogicalWidth), Px(560));
         Controls.Add(more); Controls.Add(home); more.Visible = false;
 
         // Home: status, actions, the basic settings.
-        IconButton(gear, "", "Settings"); gear.Click += (_, _) => ShowMore();
-        home.Add(new Header("MONOCLIP", 12, right: gear), 0);
+        IconButton(gear, "\uE713", "Settings"); gear.Click += (_, _) => ShowMore();
+        home.Add(new Header("MONOCLIP", gear), 0);
         status.Font = Look.Strong(10); home.Add(status, 4); target.ForeColor = Look.Muted; home.Add(target, 2);
         Style(toggleButton, "Start buffer"); toggleButton.Click += (_, _) => Run(toggle);
         Style(clipButton, "Save clip", primary: true); clipButton.Click += (_, _) => Run(saveClip);
         home.Add(new ButtonRow(toggleButton, clipButton), 12);
         Style(shareButton, "Quick share"); Style(copyLinkButton, "Copy link"); Style(editButton, "Export clip");
-        shareRow = home.Add(new ButtonRow(shareButton, copyLinkButton, editButton)); home.SetShown(shareRow, false); shareRow.SetShown(copyLinkButton, false);
+        shareRow = home.Add(new ButtonRow(shareButton, copyLinkButton, editButton)); Look.Show(shareRow, false); Look.Show(copyLinkButton, false);
         shareStatus.ForeColor = Look.Muted; home.Add(shareStatus, 4);
         home.Section("CLIPS");
-        ClipBasics(home, duration, hotkey, directory);
+        ClipBasics(home, duration, hotkey, directory, settings);
         Style(openButton, "Open folder"); openButton.Click += (_, _) => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory));
         Style(pickButton, "Export a file…"); pickButton.Enabled = false; pickButton.Click += (_, _) => PickAndShare();
         home.Add(new ButtonRow(openButton, pickButton));
         budget.ForeColor = Look.Muted; home.Add(budget, 6);
-        home.Section("STARTUP"); Toggle(home, "Start with Windows", autostart, s => s.StartWithWindows, (s, v) => s with { StartWithWindows = v });
+        home.Section("STARTUP"); Toggle(home, "Start with Windows", autostart, settings.StartWithWindows);
         feedback.ForeColor = Look.Muted; home.Add(feedback, 10);
 
-        // Settings page: every setting.
-        IconButton(back, "", "Back"); back.Click += (_, _) => ShowHome();
-        more.Add(new Header("Settings", 11, left: back), 0);
+        // Settings page: everything else.
+        IconButton(back, "\uE72B", "Back"); back.Tag = "back"; back.Click += (_, _) => ShowHome();
+        more.Add(new Header("Settings", null, back), 0);
         more.Section("RECORDING");
-        StyleCombo(resolution); binder.Choice(resolution, Resolutions, s => (s.Width, s.Height), (s, v) => s with { Width = v.Item1, Height = v.Item2 }); more.Add(new Card("Resolution", resolution, 130));
-        StyleCombo(fps); binder.Choice(fps, FrameRates, s => s.Fps, (s, v) => s with { Fps = v }); more.Add(new Card("Frame rate", fps, 130));
-        quality.Font = new Font("Segoe UI", 8.5f); quality.AccessibleName = "Quality"; binder.Steps(quality, s => (int)s.Quality, (s, v) => s with { Quality = (QualityPreset)v }); more.Add(new Card("Quality", quality, 230));
+        StyleCombo(resolution); resolution.Items.AddRange(["1280 × 720", "1920 × 1080", "2560 × 1440", "3840 × 2160"]); resolution.SelectedIndex = settings.Width switch { 1280 => 0, 1920 => 1, 2560 => 2, _ => 3 }; more.Add(new Card("Resolution", resolution, 130));
+        StyleCombo(fps); fps.Items.AddRange([30, 60, 120]); fps.SelectedItem = settings.Fps; more.Add(new Card("Frame rate", fps, 130));
+        quality.Font = new Font("Segoe UI", 8.5f); quality.Value = (int)settings.Quality; quality.AccessibleName = "Quality"; quality.AccessibleDescription = quality.ValueText; more.Add(new Card("Quality", quality, 230));
         budgetDetail.ForeColor = Look.Muted; more.Add(budgetDetail, 6);
         more.Section("AUDIO");
-        Toggle(more, "Record desktop audio", desktop, s => s.DesktopAudio, (s, v) => s with { DesktopAudio = v });
-        Toggle(more, "Record microphone", mic, s => s.Microphone, (s, v) => s with { Microphone = v });
-        Toggle(more, "Separate desktop and mic tracks", separateTracks, s => s.SeparateAudioTracks, (s, v) => s with { SeparateAudioTracks = v });
+        Toggle(more, "Record desktop audio", desktop, settings.DesktopAudio); Toggle(more, "Record microphone", mic, settings.Microphone);
+        Toggle(more, "Separate desktop and mic tracks", separateTracks, settings.SeparateAudioTracks);
         more.Note("Default Windows devices. With both recorded, separate tracks let Export mute one of them; off saves a little CPU.");
-        Toggle(more, "Sound effects", clipBeep, s => s.ClipBeep, (s, v) => s with { ClipBeep = v });
+        Toggle(more, "Sound effects", clipBeep, settings.ClipBeep);
         more.Section("CLIPS");
-        ClipBasics(more, duration2, hotkey2, directory2);
-        Toggle(more, "Sort clips by application", sortByApp, s => s.SortByApp, (s, v) => s with { SortByApp = v });
+        ClipBasics(more, duration2, hotkey2, directory2, settings);
+        Toggle(more, "Sort clips by application", sortByApp, settings.SortByApp);
         StyleCombo(games); games.Items.Add("All clips"); games.SelectedIndex = 0; more.Add(new Card("Open folder shows", games, 150));
         more.Section("SHARING");
-        Toggle(more, "Share new clips automatically", autoShare, s => s.AutoShare, (s, v) => s with { AutoShare = v });
-        Toggle(more, "Copy new links to the clipboard", copyLink, s => s.CopyShareLink, (s, v) => s with { CopyShareLink = v });
-        Toggle(more, "Link to the video file, no player page", directLink, s => s.DirectLink, (s, v) => s with { DirectLink = v });
-        shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.AccessibleName = "Link lifetime in minutes";
-        binder.Number(shareMinutes, s => s.ShareMinutes, (s, v) => s with { ShareMinutes = v }); more.Add(new Card("Link lifetime (min)", new Stepper(shareMinutes)));
+        Toggle(more, "Share new clips automatically", autoShare, settings.AutoShare);
+        Toggle(more, "Copy new links to the clipboard", copyLink, settings.CopyShareLink);
+        Toggle(more, "Link to the video file, no player page", directLink, settings.DirectLink);
+        shareMinutes.Minimum = SharePolicy.MinMinutes; shareMinutes.Maximum = SharePolicy.MaxMinutes; shareMinutes.Increment = 5; shareMinutes.Value = settings.ShareMinutes; shareMinutes.AccessibleName = "Link lifetime in minutes";
+        more.Add(new Card("Link lifetime (min)", new Stepper(shareMinutes)));
         more.Note($"MKV or MP4, up to {SharePolicy.MaxShareMegabytes / 1024} GB.");
-        more.Section("STARTUP");
-        Toggle(more, "Start with Windows", autostart2, s => s.StartWithWindows, (s, v) => s with { StartWithWindows = v });
-        Toggle(more, "Start in tray", minimized, s => s.StartMinimized, (s, v) => s with { StartMinimized = v });
-        Toggle(more, "Start buffer on launch", bufferOnLaunch, s => s.StartBufferOnLaunch, (s, v) => s with { StartBufferOnLaunch = v });
+        more.Section("STARTUP"); Toggle(more, "Start with Windows", autostart2, settings.StartWithWindows); Toggle(more, "Start in tray", minimized, settings.StartMinimized); Toggle(more, "Start buffer on launch", bufferOnLaunch, settings.StartBufferOnLaunch);
         moreFeedback.ForeColor = Look.Muted; more.Add(moreFeedback, 10);
 
-        // Every edit is applied after a short pause; a few in a row are applied together.
-        binder.Edited += () => { UpdateBudget(); commitTimer.Stop(); commitTimer.Start(); };
+        duration.ValueChanged += (_, _) => duration2.Value = duration.Value; duration2.ValueChanged += (_, _) => duration.Value = duration2.Value;
+        hotkey.TextChanged += (_, _) => hotkey2.Text = hotkey.Text; hotkey2.TextChanged += (_, _) => hotkey.Text = hotkey2.Text;
+        directory.TextChanged += (_, _) => directory2.Text = directory.Text; directory2.TextChanged += (_, _) => directory.Text = directory2.Text;
+        autostart.CheckedChanged += (_, _) => autostart2.Checked = autostart.Checked; autostart2.CheckedChanged += (_, _) => autostart.Checked = autostart2.Checked;
+        // Every change is applied after a short pause; a few in a row are applied together.
+        foreach (var box in new[] { separateTracks, mic, desktop, minimized, autostart, bufferOnLaunch, clipBeep, autoShare, sortByApp, directLink, copyLink }) box.CheckedChanged += (_, _) => Changed();
+        foreach (var combo in new[] { resolution, fps }) combo.SelectedIndexChanged += (_, _) => Changed();
+        duration.ValueChanged += (_, _) => Changed(); shareMinutes.ValueChanged += (_, _) => Changed(); quality.ValueChanged += (_, _) => Changed();
         commitTimer.Tick += (_, _) => Commit(); shareTicker.Tick += (_, _) => UpdateShareControls();
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Commit(); Hide(); } };
         // The share countdown only needs updating while the popup is open.
         VisibleChanged += (_, _) => { if (Visible) { RefreshGames(); UpdateStatus(); if (sharer != null) shareTicker.Start(); } else { Commit(); shareTicker.Stop(); } };
         DpiChanged += (_, _) => BeginInvoke(() => { if (popup && Visible) Place(); });
-        home.HandleCreated += (_, _) => WindowChrome.DarkScrollbars(home.Handle); more.HandleCreated += (_, _) => WindowChrome.DarkScrollbars(more.Handle);
+        home.HandleCreated += (_, _) => DarkScrollbars(home.Handle); more.HandleCreated += (_, _) => DarkScrollbars(more.Handle);
         EnableDrop(this);
-        binder.Push(); engine.StatusChanged += EngineStatus; UpdateBudget(); UpdateStatus();
+        engine.StatusChanged += EngineStatus; UpdateBudget(); UpdateStatus(); loading = false;
     }
 
     int Px(int logical) => LogicalToDeviceUnits(logical);
@@ -101,22 +101,19 @@ public sealed class SettingsForm : Form
         b.Text = text; b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderSize = 0; b.UseVisualStyleBackColor = false; b.Cursor = Cursors.Hand;
         b.BackColor = primary ? Look.Text : Look.Card; b.ForeColor = primary ? Look.Page : Look.Text;
     }
-    static void IconButton(Button b, string glyph, string name) { Style(b, glyph); b.BackColor = Look.Page; b.ForeColor = Look.Muted; b.Font = Look.Icons(11); b.AccessibleName = name; }
-    void Toggle(Page page, string text, CheckBox box, Func<AppSettings, bool> get, Func<AppSettings, bool, AppSettings> set) { box.AccessibleName = text; binder.Toggle(box, get, set); page.Add(new Card(text, box)); }
-    // Clip length, save hotkey and folder: on home, and again on the settings page.
-    void ClipBasics(Page page, NumericUpDown length, TextBox key, TextBox folder)
+    void IconButton(Button b, string glyph, string name) { Style(b, glyph); b.BackColor = Look.Page; b.ForeColor = Look.Muted; b.Font = Look.Icons(11); b.AccessibleName = name; b.TabStop = true; }
+    // Clip length, save hotkey and folder (home has them, the settings page too).
+    void ClipBasics(Page page, NumericUpDown length, TextBox key, TextBox folderBox, AppSettings settings)
     {
-        length.Minimum = AppSettings.MinClipSeconds; length.Maximum = AppSettings.MaxClipSeconds; binder.Number(length, s => s.ClipSeconds, (s, v) => s with { ClipSeconds = v });
-        page.Add(new Card("Clip length (s)", new Stepper(length)));
-        // The hotkey box records a key combination instead of taking typed text.
-        key.ReadOnly = true; key.TextAlign = HorizontalAlignment.Center; key.AccessibleName = "Clip hotkey"; key.Cursor = Cursors.Hand; binder.Text(key, s => s.Hotkey, (s, v) => s with { Hotkey = v });
-        key.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin or Keys.Escape or Keys.Tab) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); key.Text = new Hotkey(mods, e.KeyCode).ToString(); };
+        length.Minimum = AppSettings.MinClipSeconds; length.Maximum = AppSettings.MaxClipSeconds; length.Value = settings.ClipSeconds; page.Add(new Card("Clip length (s)", new Stepper(length)));
+        key.ReadOnly = true; key.Text = settings.Hotkey; key.TextAlign = HorizontalAlignment.Center; key.AccessibleName = "Clip hotkey"; key.Cursor = Cursors.Hand;
+        key.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin or Keys.Escape or Keys.Tab) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); key.Text = new Hotkey(mods, e.KeyCode).ToString(); Changed(); };
         page.Add(new Card("Save hotkey", new Field(key), 130));
         // The folder is chosen with the folder picker; typing a path would apply half-typed folders.
-        folder.ReadOnly = true; folder.Cursor = Cursors.Hand; binder.Text(folder, s => s.ClipsDirectory, (s, v) => s with { ClipsDirectory = v });
-        folder.Click += (_, _) => Browse(); folder.KeyDown += (_, e) => { if (e.KeyCode is Keys.Enter or Keys.Space) Browse(); };
-        var field = new Field(folder); field.Click += (_, _) => Browse(); page.Add(new Card("Folder", field, stretch: true));
+        folderBox.ReadOnly = true; folderBox.Text = settings.ClipsDirectory; folderBox.Cursor = Cursors.Hand; folderBox.Click += (_, _) => Browse(); folderBox.KeyDown += (_, e) => { if (e.KeyCode is Keys.Enter or Keys.Space) Browse(); };
+        var field = new Field(folderBox); field.Click += (_, _) => Browse(); page.Add(new Card("Folder", field, stretch: true));
     }
+    static void Toggle(Page page, string text, CheckBox box, bool value) { box.Checked = value; box.AccessibleName = text; page.Add(new Card(text, box)); }
     static void StyleCombo(ComboBox c)
     {
         c.DropDownStyle = ComboBoxStyle.DropDownList; c.BackColor = Look.Field; c.ForeColor = Look.Text; c.FlatStyle = FlatStyle.Flat;
@@ -135,8 +132,8 @@ public sealed class SettingsForm : Form
     public void ShowNear(Point? anchor)
     {
         popup = true; this.anchor = anchor; ShowHome(); Place();
-        // Without the foreground the popup would not get the focus, and so never close by itself.
-        if (!Visible) Show(); WindowChrome.TakeForeground(Handle); Activate(); BeginInvoke(Place); // a monitor with other scaling resizes the window once shown
+        // A tray click allows taking the foreground; without it the popup would not get focus, and so never close by itself.
+        if (!Visible) Show(); SetForegroundWindow(Handle); Activate(); BeginInvoke(Place); // a monitor with other scaling resizes the window once shown
     }
     void Place()
     {
@@ -164,13 +161,20 @@ public sealed class SettingsForm : Form
         if (keyData == Keys.Escape) { if (more.Visible) ShowHome(); else { Commit(); Hide(); } return true; }
         return base.ProcessCmdKey(ref msg, keyData);
     }
-    protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ClassStyle |= WindowChrome.DropShadow; return p; } }
-    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); WindowChrome.RoundedFrame(Handle); }
+    protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ClassStyle |= 0x00020000; return p; } } // CS_DROPSHADOW
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // Windows 11: rounded corners and a thin border on the borderless window. Older versions ignore it.
+        try { int round = 2, border = ColorRef(Look.Line); DwmSetWindowAttribute(Handle, CornerPreference, ref round, sizeof(int)); DwmSetWindowAttribute(Handle, BorderColor, ref border, sizeof(int)); }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { }
+    }
 
-    // Applies the draft. Invalid values (or a hotkey that is taken) are reported and not applied.
+    void Changed() { if (loading) return; UpdateBudget(); commitTimer.Stop(); commitTimer.Start(); }
+    // Applies what the controls show. Invalid values (or a hotkey that is taken) are reported and not applied.
     void Commit()
     {
-        commitTimer.Stop();
+        commitTimer.Stop(); if (loading) return;
         AppSettings next;
         try { next = ReadSettings(); } catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException) { Feedback(e.Message); return; }
         if (next == original) return;
@@ -186,15 +190,18 @@ public sealed class SettingsForm : Form
     T Dialog<T>(Func<T> show) { dialogs++; try { return show(); } finally { dialogs--; } }
 
     void EngineStatus(object? sender, EventArgs args) { if (!IsDisposed) UpdateStatus(); }
-    // True while the user records a new save hotkey here (in front, a hotkey box focused): the old one must not save.
-    internal bool RecordingHotkey => Visible && WindowChrome.IsForeground(Handle) && (hotkey.Focused || hotkey2.Focused);
-    // The draft as it would be applied (hotkey in its canonical spelling), or ArgumentException when invalid.
-    public AppSettings ReadSettings() { var s = binder.Draft with { Hotkey = Hotkey.Parse(binder.Draft.Hotkey).ToString(), ClipsDirectory = binder.Draft.ClipsDirectory.Trim() }; s.Validate(); return s; }
+    public AppSettings ReadSettings()
+    {
+        var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) };
+        var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)(fps.SelectedItem ?? 60), ClipSeconds = (int)duration.Value, Hotkey = Hotkey.Parse(hotkey.Text).ToString(), Quality = (QualityPreset)quality.Value, ClipsDirectory = directory.Text.Trim(), Microphone = mic.Checked, DesktopAudio = desktop.Checked, SeparateAudioTracks = separateTracks.Checked, ClipBeep = clipBeep.Checked, StartMinimized = minimized.Checked, StartBufferOnLaunch = bufferOnLaunch.Checked, StartWithWindows = autostart.Checked, ShareMinutes = (int)shareMinutes.Value, AutoShare = autoShare.Checked, CopyShareLink = copyLink.Checked, SortByApp = sortByApp.Checked, DirectLink = directLink.Checked };
+        s.Validate(); return s;
+    }
     void UpdateBudget()
     {
-        var s = binder.Draft; var clip = FormatSize(CapturePolicy.EstimatedClipMegabytes(s));
-        budget.Text = $"≈ {clip} per clip";
-        budgetDetail.Text = $"{CapturePolicy.BitrateKbps(s) / 1000d:0.#} Mbit/s video + {CapturePolicy.AudioTracks(s)} × {CapturePolicy.AudioKbpsPerTrack} kbit/s audio · ≈ {clip} per clip · RAM buffer up to {CapturePolicy.BufferMegabytes(s)} MB";
+        if (fps.SelectedItem == null) return; var size = resolution.SelectedIndex switch { 0 => (1280, 720), 1 => (1920, 1080), 2 => (2560, 1440), _ => (3840, 2160) };
+        var s = original with { Width = size.Item1, Height = size.Item2, Fps = (int)fps.SelectedItem, ClipSeconds = (int)duration.Value, Quality = (QualityPreset)quality.Value, DesktopAudio = desktop.Checked, Microphone = mic.Checked, SeparateAudioTracks = separateTracks.Checked };
+        budget.Text = $"≈ {FormatSize(CapturePolicy.EstimatedClipMegabytes(s))} per clip";
+        budgetDetail.Text = $"{CapturePolicy.BitrateKbps(s) / 1000d:0.#} Mbit/s video + {CapturePolicy.AudioTracks(s)} × {CapturePolicy.AudioKbpsPerTrack} kbit/s audio · ≈ {FormatSize(CapturePolicy.EstimatedClipMegabytes(s))} per clip · RAM buffer up to {CapturePolicy.BufferMegabytes(s)} MB";
     }
     internal static string FormatSize(double megabytes) => megabytes >= 1024 ? $"{megabytes / 1024:0.0} GB" : megabytes >= 10 ? $"{megabytes:0} MB" : $"{megabytes:0.0} MB";
     public void UpdateStatus()
@@ -228,21 +235,50 @@ public sealed class SettingsForm : Form
     void UpdateShareControls()
     {
         if (sharer == null || IsDisposed) return;
-        home.SetShown(shareRow, true);
-        // An empty status line takes no room on the page.
+        Look.Show(shareRow, true);
         if (sharer.IsStarting) { shareButton.Text = "Cancel sharing"; shareStatus.Text = "Creating link…"; }
         else if (sharer.Current is { } c)
         {
-            shareButton.Text = "Stop sharing"; shareStatus.Text = $"Shared · {c.MinutesLeft} min left (until {c.ExpiresAt:HH:mm})\n{new Uri(c.Url).Host}";
+            int left = Math.Max(1, (int)Math.Ceiling((c.ExpiresAt - DateTimeOffset.Now).TotalMinutes));
+            shareButton.Text = "Stop sharing"; shareStatus.Text = $"Shared · {left} min left (until {c.ExpiresAt:HH:mm})\n{new Uri(c.Url).Host}";
         }
         else { shareButton.Text = $"Quick share ({original.ShareMinutes} min)"; shareStatus.Text = ""; }
-        shareRow.SetShown(copyLinkButton, sharer.Current != null);
+        Look.Show(copyLinkButton, sharer.Current != null); Look.Show(shareStatus, shareStatus.Text.Length > 0);
         if (popup && Visible) Place(); // the popup grows or shrinks with the share line, keeping its place by the tray
     }
+    internal static Icon? AppIcon()
+    {
+        // Embedded in the app; absent when the form is compiled into tests.
+        using var stream = typeof(SettingsForm).Assembly.GetManifestResourceStream("MonoClip.ico");
+        return stream == null ? null : new Icon(stream);
+    }
     public void Feedback(string text) { feedback.Text = text; moreFeedback.Text = text; }
-    // The tray saved a new export folder: keep it when the draft is applied later.
-    internal void KeepExportDirectory(string folder) { original = original with { ExportDirectory = folder }; binder.Draft = binder.Draft with { ExportDirectory = folder }; }
+    // The tray saved a new export folder: keep it when these settings are applied later.
+    internal void KeepExportDirectory(string folder) => original = original with { ExportDirectory = folder };
     void Run(Action action) { try { action(); UpdateStatus(); } catch (Exception e) { Feedback(e.Message); } }
     void RefreshGames() { Run(() => { var chosen = games.Text; games.Items.Clear(); games.Items.Add("All clips"); foreach (var g in ClipLibrary.GetGames(original.ClipsDirectory)) games.Items.Add(g); games.SelectedIndex = Math.Max(0, games.Items.IndexOf(chosen)); }); }
     protected override void Dispose(bool disposing) { if (disposing) { engine.StatusChanged -= EngineStatus; shareTicker.Dispose(); commitTimer.Dispose(); } base.Dispose(disposing); }
+
+    // Window chrome. Attribute 20 (19 before Windows 10 20H1) switches a title bar to dark mode; 33 asks Windows 11
+    // for rounded corners; 34/35/36 set exact border/caption/text colours. Unsupported ones just return an error.
+    const int DarkModeOld = 19, DarkMode = 20, CornerPreference = 33, BorderColor = 34, CaptionColor = 35, TextColor = 36;
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr window, string? subAppName, string? subIdList);
+    static int ColorRef(Color c) => c.R | c.G << 8 | c.B << 16;
+    internal static void DarkTitleBar(IntPtr window)
+    {
+        try
+        {
+            int on = 1; if (DwmSetWindowAttribute(window, DarkMode, ref on, sizeof(int)) != 0) DwmSetWindowAttribute(window, DarkModeOld, ref on, sizeof(int));
+            int caption = ColorRef(Color.FromArgb(12, 12, 12)), text = ColorRef(Look.Text), border = ColorRef(Look.Line);
+            DwmSetWindowAttribute(window, CaptionColor, ref caption, sizeof(int)); DwmSetWindowAttribute(window, TextColor, ref text, sizeof(int)); DwmSetWindowAttribute(window, BorderColor, ref border, sizeof(int));
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { /* Cosmetic only. */ }
+    }
+    static void DarkScrollbars(IntPtr window)
+    {
+        try { SetWindowTheme(window, "DarkMode_Explorer", null); }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { /* Cosmetic only. */ }
+    }
 }

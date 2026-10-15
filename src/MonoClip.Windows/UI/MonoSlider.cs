@@ -9,7 +9,7 @@ internal sealed class MonoSlider : Control
     public MonoSlider(params string[] labels)
     {
         if (labels.Length < 2) throw new ArgumentException("At least two steps required.", nameof(labels));
-        this.labels = labels; TabStop = true; AccessibleRole = AccessibleRole.Slider; AccessibleDescription = labels[0]; Cursor = Cursors.Hand;
+        this.labels = labels; TabStop = true; AccessibleRole = AccessibleRole.Slider; Cursor = Cursors.Hand;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
     }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]

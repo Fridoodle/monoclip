@@ -82,8 +82,6 @@ internal static class Obs
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.I1)] internal static extern bool media_remux_job_process(IntPtr job, IntPtr callback, IntPtr data);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void media_remux_job_destroy(IntPtr job);
     internal static string Str(IntPtr p) => p == IntPtr.Zero ? "" : Marshal.PtrToStringUTF8(p) ?? "";
-    // libobs answers null when it cannot create an object.
-    internal static IntPtr Require(IntPtr ptr, string name) => ptr == IntPtr.Zero ? throw new InvalidOperationException(name + " could not be created.") : ptr;
 }
 internal sealed class ObsData : IDisposable
 {
