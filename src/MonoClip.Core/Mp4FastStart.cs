@@ -30,7 +30,7 @@ public static class Mp4FastStart
         var boxes = new List<Box>(); var header = new byte[16]; long offset = 0;
         while (offset < s.Length)
         {
-            if (s.Length - offset < 8) throw new InvalidDataException("Abgeschnittene MP4-Box.");
+            if (s.Length - offset < 8) throw new InvalidDataException("Truncated MP4 box.");
             s.Position = offset; s.ReadExactly(header, 0, 8);
             long size = BinaryPrimitives.ReadUInt32BigEndian(header); var type = System.Text.Encoding.ASCII.GetString(header, 4, 4);
             if (size == 1) { s.ReadExactly(header, 8, 8); size = (long)BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(8)); }

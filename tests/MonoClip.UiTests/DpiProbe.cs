@@ -1,4 +1,4 @@
-using System.Reflection;
+using static UiTest;
 
 // Opt-in (--dpi <dir>): moves a real settings popup between monitors with different scaling and renders both
 // pages after each move. Needs two monitors with different DPI; checks the layout afterwards.
@@ -10,15 +10,18 @@ internal static class DpiProbe
         Directory.CreateDirectory(dir);
         var screens = Screen.AllScreens;
         if (screens.Length < 2) { Console.WriteLine("SKIP needs two monitors"); return 0; }
-        using var form = new MonoClip.Windows.UI.SettingsForm(new MonoClip.Core.AppSettings(), new FakeEngine(), _ => { }, () => { }, () => { });
+        using var form = NewSettingsForm();
         int failures = 0, step = 0;
         foreach (var screen in screens.Concat(screens))
         {
-            var area = screen.WorkingArea; form.ShowNear(new Point(area.Right - 40, area.Bottom - 5));
-            Pump(1200); step++;
+            var area = screen.WorkingArea;
+            form.ShowNear(new Point(area.Right - 40, area.Bottom - 5));
+            Pump(1200, step: 15);
+            step++;
             foreach (var page in new[] { "home", "more" })
             {
-                form.GetType().GetMethod(page == "home" ? "ShowHome" : "ShowMore", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null); Pump(300);
+                Call(form, page == "home" ? "ShowHome" : "ShowMore");
+                Pump(300, step: 15);
                 var problems = Check(form, Field<Control>(form, page));
                 if (page == "home" && !area.Contains(form.Bounds)) problems.Add($"popup {form.Bounds} outside the work area {area}");
                 Console.WriteLine($"{(problems.Count == 0 ? "PASS" : "FAIL")} step {step} {page}: {screen.DeviceName} dpi={form.DeviceDpi} size={form.Size} {string.Join("; ", problems.Take(6))}");
@@ -30,9 +33,6 @@ internal static class DpiProbe
         form.Close();
         return failures == 0 ? 0 : 1;
     }
-    static void Pump(int ms) { var clock = System.Diagnostics.Stopwatch.StartNew(); while (clock.ElapsedMilliseconds < ms) { Application.DoEvents(); Thread.Sleep(15); } }
-    static T Field<T>(object o, string name) => (T)o.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(o)!;
-    static IEnumerable<Control> All(Control c) => c.Controls.Cast<Control>().SelectMany(x => All(x).Prepend(x));
     // Layout sanity at the current DPI: blocks share one scaled height and do not overlap, their contents fit and
     // are centred, inputs are tall enough for their text, nothing is clipped at the right.
     static List<string> Check(Form form, Control page)

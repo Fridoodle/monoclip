@@ -1,5 +1,4 @@
 using MonoClip.Core;
-using System.Runtime.InteropServices;
 using static MonoClip.Windows.Share.Mf;
 namespace MonoClip.Windows.Share;
 
@@ -25,32 +24,13 @@ internal static class ClipTrim
         }
         finally { Release(ref reader); MFShutdown(); }
     }
-    // Reader stream index and name of each audio track, in the order Media Foundation lists them.
-    public static unsafe List<(uint Stream, string? Name)> AudioStreams(IntPtr reader)
-    {
-        var audio = new List<(uint, string?)>();
-        for (uint i = 0; NativeType(reader, i, out var type) >= 0; i++)
-        {
-            bool isAudio; try { isAudio = GetGuid(type, MajorType) == Audio; } finally { Release(ref type); }
-            if (!isAudio) continue;
-            string? name = null;
-            if (PresentationAttribute(reader, i, StreamName, out var value))
-            {
-                if (value.Type == VtLpwstr && value.Pointer != 0) name = Marshal.PtrToStringUni(value.Pointer);
-                PropVariantClear(&value);
-            }
-            audio.Add((i, name));
-        }
-        return audio;
-    }
 
-    sealed class Track { public uint Reader, Writer; public bool Video, Done; public IntPtr Sample; public long Time; }
     // Writes a fast-start MP4 with the edit applied. audioTrack indexes the clip's audio tracks.
     public static void Create(string source, string target, ClipEdit edit, CancellationToken cancel = default)
     {
         var raw = target + ".trim.mp4";
         Check(MFStartup(MfVersion, StartupLite), "Media Foundation startup");
-        IntPtr reader = 0, writer = 0, video = 0, audio = 0; var tracks = new List<Track>();
+        IntPtr reader = 0, writer = 0, video = 0, audio = 0;
         try
         {
             Check(MFCreateSourceReaderFromURL(source, 0, out reader), "Opening the clip");
@@ -59,46 +39,35 @@ internal static class ClipTrim
             Check(MFCreateSinkWriterFromURL(raw, 0, 0, out writer), "Creating the copy");
             // Native (compressed) types on both sides: the sink writer passes the samples through unchanged.
             SelectStream(reader, FirstVideo, true); Check(NativeType(reader, FirstVideo, out video), "video format"); SetReaderType(reader, FirstVideo, video, "video copy");
-            var picture = new Track { Reader = FirstVideo, Video = true, Writer = AddStream(writer, video, "video stream") }; SetWriterInput(writer, picture.Writer, video, "video copy"); tracks.Add(picture);
+            var routes = new List<Route> { new(FirstVideo, AddStream(writer, video, "video stream"), Video: true) }; SetWriterInput(writer, routes[0].Writer, video, "video copy");
             if (edit.AudioTrack is int index && index >= 0 && index < audioStreams.Count)
             {
                 uint stream = audioStreams[index].Stream;
                 SelectStream(reader, stream, true); Check(NativeType(reader, stream, out audio), "audio format"); SetReaderType(reader, stream, audio, "audio copy");
                 // OBS's MKV leaves out the AAC sample size, without which the MP4 writer drops the whole track.
                 if (!HasU32(audio, BitsPerSample)) SetU32(audio, BitsPerSample, 16);
-                var sound = new Track { Reader = stream, Writer = AddStream(writer, audio, "audio stream") }; SetWriterInput(writer, sound.Writer, audio, "audio copy"); tracks.Add(sound);
+                var sound = new Route(stream, AddStream(writer, audio, "audio stream"), Video: false); SetWriterInput(writer, sound.Writer, audio, "audio copy"); routes.Add(sound);
             }
             BeginWriting(writer);
             if (edit.Start > TimeSpan.Zero) Seek(reader, edit.Start);
 
-            // The first video sample after the seek is the keyframe the copy starts with.
+            // The first video sample after the seek is the keyframe the copy starts with (video is read first).
             long origin = long.MinValue, end = edit.End.Ticks;
-            while (true)
+            Interleave(reader, writer, routes, (route, sample, time) =>
             {
-                cancel.ThrowIfCancellationRequested();
-                foreach (var t in tracks) // video first, so the origin is known before any audio is kept
-                    while (!t.Done && t.Sample == 0)
-                    {
-                        if (!ReadSample(reader, t.Reader, out var sample, out var time)) { t.Done = true; break; }
-                        if (sample == 0) continue;
-                        if (t.Video && origin == long.MinValue) origin = time;
-                        if (time >= end) { Marshal.Release(sample); t.Done = true; break; }
-                        t.Sample = sample; t.Time = time;
-                    }
-                if (origin == long.MinValue) break; // no video at all
-                var next = tracks.Where(t => t.Sample != 0).MinBy(t => t.Time);
-                if (next == null) break;
-                // Audio from before the keyframe is dropped, so sound and picture stay in sync.
-                if (next.Time >= origin) { SetSampleTime(next.Sample, next.Time - origin); WriteSample(writer, next.Writer, next.Sample); }
-                Release(ref next.Sample);
-            }
+                if (route.Video && origin == long.MinValue) origin = time;
+                // Without any video there is nothing to keep. Audio from before the keyframe is dropped, so sound and
+                // picture stay in sync.
+                if (origin == long.MinValue || time >= end) return SampleFate.EndStream;
+                if (time < origin) return SampleFate.Drop;
+                SetSampleTime(sample, time - origin); return SampleFate.Write;
+            }, cancel);
             if (origin == long.MinValue) throw new InvalidDataException("The clip has no video in the chosen range.");
             FinishWriting(writer); Release(ref writer);
             Mp4FastStart.Apply(raw, target);
         }
         finally
         {
-            foreach (var t in tracks) Release(ref t.Sample);
             Release(ref audio); Release(ref video); Release(ref writer); Release(ref reader); MFShutdown();
             if (File.Exists(raw)) File.Delete(raw);
         }
