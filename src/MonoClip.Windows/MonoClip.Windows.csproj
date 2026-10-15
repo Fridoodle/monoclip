@@ -19,7 +19,7 @@
   <!-- Publish drops framework assemblies that are never referenced, but never cuts code out of the
        ones that are (member-level trimming is unsupported for WinForms and can break reflection). -->
   <PropertyGroup>
-    <PublishTrimmed>true</PublishTrimmed>
+    <PublishTrimmed>false</PublishTrimmed>
     <TrimMode>partial</TrimMode>
     <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
     <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
