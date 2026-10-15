@@ -189,7 +189,8 @@ internal static class TraySharingTests
         played.Clear();
         answer = new(trim, Path.Combine(dir, "out.mp4"));
         edit.PerformClick();
-        PumpUntil(() => played.Count > 0, 5000);
+        // The save runs Media Foundation on a worker thread; its first start on a fresh CI runner can take seconds.
+        PumpUntil(() => played.Count > 0, 30000);
         Equal<string?>(null, sharer.SharedClip);
         Equal("Error", string.Join(",", played));
 
