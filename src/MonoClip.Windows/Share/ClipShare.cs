@@ -74,14 +74,7 @@ public sealed class ClipShare : IClipSharer
             {
                 progress?.Report("Creating preview…");
                 // A failed preview must not fail the share: the direct video link still works.
-                try
-                {
-                    var (mp4, jpeg, imageWidth, imageHeight, embed) = await preview;
-                    var page = new SharePageInfo(title, SharePage.Describe(mp4), t.PublicUrl + SharePolicy.PagePath(token), url, t.PublicUrl + SharePolicy.ImagePath(token), mp4?.Width ?? 1920, mp4?.Height ?? 1080, imageWidth, imageHeight,
-                        embed != null ? t.PublicUrl + SharePolicy.EmbedPath(token) : null, embed?.Width ?? 0, embed?.Height ?? 0);
-                    local.AttachPage(new(SharePolicy.PagePath(token), System.Text.Encoding.UTF8.GetBytes(SharePage.Build(page)), SharePolicy.ImagePath(token), jpeg, SharePolicy.EmbedPath(token), embed != null ? EmbedFile(target) : null));
-                    url = page.PageUrl;
-                }
+                try { url = AttachPage(local, t.PublicUrl, token, title, url, target, await preview); }
                 catch (Exception e) when (e is not OperationCanceledException || !cancel.IsCancellationRequested) { }
             }
             var info = new ShareInfo(url, DateTimeOffset.Now + duration, clipPath);
@@ -117,6 +110,16 @@ public sealed class ClipShare : IClipSharer
         // Any failure (timeout, shell error) only costs the real frame, never the page.
         catch (Exception e) when (e is not OperationCanceledException) { jpeg = ClipThumbnail.CreateJpeg("", width, height, title); }
         return new(info, jpeg, width, height, await embed);
+    }
+    // Serves the player page and preview image (and the embed copy, when there is one) next to the video at host;
+    // returns the page's link.
+    static string AttachPage(ClipShareServer local, string host, string token, string title, string videoUrl, string copy, Preview preview)
+    {
+        var (mp4, jpeg, imageWidth, imageHeight, embed) = preview;
+        var page = new SharePageInfo(title, SharePage.Describe(mp4), host + SharePolicy.PagePath(token), videoUrl, host + SharePolicy.ImagePath(token), mp4?.Width ?? 1920, mp4?.Height ?? 1080, imageWidth, imageHeight,
+            embed != null ? host + SharePolicy.EmbedPath(token) : null, embed?.Width ?? 0, embed?.Height ?? 0);
+        local.AttachPage(new(SharePolicy.PagePath(token), System.Text.Encoding.UTF8.GetBytes(SharePage.Build(page)), SharePolicy.ImagePath(token), jpeg, SharePolicy.EmbedPath(token), embed != null ? EmbedFile(copy) : null));
+        return page.PageUrl;
     }
     static string EmbedFile(string copy) => Path.ChangeExtension(copy, ".embed.mp4");
     ClipShareServer StartServer() { var s = new ClipShareServer { Sent = Measured }; s.Start(); return s; }
