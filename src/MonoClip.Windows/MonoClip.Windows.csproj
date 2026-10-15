@@ -16,20 +16,12 @@
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>
   </PropertyGroup>
-  <!-- Publish drops framework assemblies that are never referenced, but never cuts code out of the
-       ones that are (member-level trimming is unsupported for WinForms and can break reflection). -->
+  <!-- No trimming: the trimmer rewrites the .NET runtime files, which strips Microsoft's signatures. Unsigned files
+       from a downloaded ZIP are each held by Defender's cloud check on first load (slow first start, stutter on the
+       first share). Shipped as Microsoft signed them, Defender trusts them by signature. -->
   <PropertyGroup>
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>partial</TrimMode>
-    <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
-    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
-  <Target Name="MonoClipKeepUsedAssembliesWhole" AfterTargets="PrepareForILLink">
-    <ItemGroup>
-      <ManagedAssemblyToLink Update="@(ManagedAssemblyToLink)" TrimMode="copyused" />
-    </ItemGroup>
-  </Target>
   <!-- Debugger/crash-dump helpers and alternative GCs are never loaded by a normal run. -->
   <Target Name="MonoClipDropDiagnostics" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>
