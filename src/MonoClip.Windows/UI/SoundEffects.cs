@@ -2,7 +2,7 @@ using System.Media;
 using System.Text;
 namespace MonoClip.Windows.UI;
 
-public enum Sound { Clip, Upload, Link, Error, BufferOn, BufferOff, ShareStopped, Launch }
+public enum Sound { Clip, Upload, Link, Error, BufferOn, BufferOff, ShareStopped, Launch, Screenshot }
 
 // Short synthesized cues instead of pop-up notifications. Generated once in memory, no files.
 // Windows plays one sound per process at a time, so cues are queued instead of cutting each other off.
@@ -29,6 +29,8 @@ public sealed class SoundEffects : IDisposable
         Sound.BufferOn => [new(0, 587, 0.09, 0.04, 0.8), new(0.055, 880, 0.13, 0.05, 0.85)],
         // The same fifth falling, softer: recording is off.
         Sound.BufferOff => [new(0, 880, 0.09, 0.04, 0.7), new(0.055, 587, 0.15, 0.06, 0.65)],
+        // Camera shutter: a bright click, then a lower one.
+        Sound.Screenshot => [new(0, 2093, 0.05, 0.012, 1.0, GlideTo: 1568), new(0.065, 1397, 0.07, 0.02, 0.85, GlideTo: 1047)],
         // One soft note sliding down: the link is gone.
         Sound.ShareStopped => [new(0, 698, 0.18, 0.07, 0.75, GlideTo: 466)],
         // Gentle low arpeggio: MonoClip is running.

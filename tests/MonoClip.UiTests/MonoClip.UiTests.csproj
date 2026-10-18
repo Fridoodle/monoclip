@@ -33,6 +33,8 @@
     <Compile Include="../../src/MonoClip.Windows/UI/ClipPlayer.cs" Link="ClipPlayer.cs" />
     <Compile Include="../../src/MonoClip.Windows/Share/ClipTrim.cs" Link="ClipTrim.cs" />
     <Compile Include="../../src/MonoClip.Windows/Share/Mf.cs" Link="Mf.cs" />
+    <Compile Include="../../src/MonoClip.Windows/Capture/Screenshot.cs" Link="Screenshot.cs" />
+    <Compile Include="../../src/MonoClip.Windows/Capture/ForegroundTracker.cs" Link="ForegroundTracker.cs" />
     <ProjectReference Include="../../src/MonoClip.Core/MonoClip.Core.csproj" />
   </ItemGroup>
 </Project>

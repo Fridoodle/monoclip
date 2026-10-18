@@ -14,12 +14,12 @@ public sealed class SettingsForm : Form
     readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox();
     // Clip length, hotkey, folder and autostart have a control on each page (the "2" ones on the settings page).
     readonly NumericUpDown duration = new MonoNumeric(), duration2 = new MonoNumeric(), shareMinutes = new MonoNumeric();
-    readonly TextBox hotkey = new(), hotkey2 = new(), directory = new(), directory2 = new();
+    readonly TextBox hotkey = new(), hotkey2 = new(), directory = new(), directory2 = new(), screenshotHotkey = new(), screenshotDirectory = new();
     readonly CheckBox autostart = new MonoToggle(), autostart2 = new MonoToggle(), separateTracks = new MonoToggle(), mic = new MonoToggle(), desktop = new MonoToggle(), minimized = new MonoToggle(),
         bufferOnLaunch = new MonoToggle(), clipBeep = new MonoToggle(), autoShare = new MonoToggle(), sortByApp = new MonoToggle(), directLink = new MonoToggle(), copyLink = new MonoToggle();
     readonly MonoSlider quality = new("Performance", "Balanced", "Quality");
     readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton(), shareButton = new MonoButton(), editButton = new MonoButton(), copyLinkButton = new MonoButton(),
-        openButton = new MonoButton(), pickButton = new MonoButton(), gear = new MonoButton(), back = new MonoButton();
+        openButton = new MonoButton(), pickButton = new MonoButton(), gear = new MonoButton(), back = new MonoButton(), openScreenshots = new MonoButton(), defaultScreenshots = new MonoButton();
     readonly Label status = new(), target = new(), budget = new(), budgetDetail = new(), shareStatus = new(), feedback = new(), moreFeedback = new();
     readonly Page home = new(), more = new(); readonly ButtonRow shareRow;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 15000 }, commitTimer = new() { Interval = CommitDelay };
@@ -70,6 +70,19 @@ public sealed class SettingsForm : Form
         ClipBasics(more, duration2, hotkey2, directory2);
         Toggle(more, "Sort clips by application", sortByApp, s => s.SortByApp, (s, v) => s with { SortByApp = v });
         StyleCombo(games); games.Items.Add("All clips"); games.SelectedIndex = 0; more.Add(new Card("Open folder shows", games, 150));
+        more.Section("SCREENSHOTS");
+        HotkeyBox(screenshotHotkey, "Screenshot hotkey", s => s.ScreenshotHotkey, (s, v) => s with { ScreenshotHotkey = v });
+        more.Add(new Card("Screenshot hotkey", new Field(screenshotHotkey), 130));
+        // Shows the folder in use. The default (Screenshots in the clip folder) is stored as empty, so it moves along with
+        // the clip folder; picking that same folder keeps it so.
+        screenshotDirectory.ReadOnly = true; screenshotDirectory.Cursor = Cursors.Hand;
+        binder.Text(screenshotDirectory, s => s.ScreenshotFolder(), (s, v) => s with { ScreenshotsDirectory = v == (s with { ScreenshotsDirectory = "" }).ScreenshotFolder() ? "" : v });
+        screenshotDirectory.Click += (_, _) => BrowseScreenshots(); screenshotDirectory.KeyDown += (_, e) => { if (e.KeyCode is Keys.Enter or Keys.Space) BrowseScreenshots(); };
+        var screenshotField = new Field(screenshotDirectory); screenshotField.Click += (_, _) => BrowseScreenshots(); more.Add(new Card("Folder", screenshotField, stretch: true));
+        Style(openScreenshots, "Open folder"); openScreenshots.Click += (_, _) => Run(() => WindowsIntegration.OpenClipFolder(original.ScreenshotFolder()));
+        Style(defaultScreenshots, "Use clip folder"); defaultScreenshots.Click += (_, _) => { screenshotDirectory.Text = ""; Commit(); };
+        more.Add(new ButtonRow(openScreenshots, defaultScreenshots));
+        more.Note("Saves the monitor you are on as a PNG.");
         more.Section("SHARING");
         Toggle(more, "Share new clips automatically", autoShare, s => s.AutoShare, (s, v) => s with { AutoShare = v });
         Toggle(more, "Copy new links to the clipboard", copyLink, s => s.CopyShareLink, (s, v) => s with { CopyShareLink = v });
@@ -108,14 +121,18 @@ public sealed class SettingsForm : Form
     {
         length.Minimum = AppSettings.MinClipSeconds; length.Maximum = AppSettings.MaxClipSeconds; binder.Number(length, s => s.ClipSeconds, (s, v) => s with { ClipSeconds = v });
         page.Add(new Card("Clip length (s)", new Stepper(length)));
-        // The hotkey box records a key combination instead of taking typed text.
-        key.ReadOnly = true; key.TextAlign = HorizontalAlignment.Center; key.AccessibleName = "Clip hotkey"; key.Cursor = Cursors.Hand; binder.Text(key, s => s.Hotkey, (s, v) => s with { Hotkey = v });
-        key.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin or Keys.Escape or Keys.Tab) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); key.Text = new Hotkey(mods, e.KeyCode).ToString(); };
+        HotkeyBox(key, "Clip hotkey", s => s.Hotkey, (s, v) => s with { Hotkey = v });
         page.Add(new Card("Save hotkey", new Field(key), 130));
         // The folder is chosen with the folder picker; typing a path would apply half-typed folders.
         folder.ReadOnly = true; folder.Cursor = Cursors.Hand; binder.Text(folder, s => s.ClipsDirectory, (s, v) => s with { ClipsDirectory = v });
         folder.Click += (_, _) => Browse(); folder.KeyDown += (_, e) => { if (e.KeyCode is Keys.Enter or Keys.Space) Browse(); };
         var field = new Field(folder); field.Click += (_, _) => Browse(); page.Add(new Card("Folder", field, stretch: true));
+    }
+    // A hotkey box records a key combination instead of taking typed text.
+    void HotkeyBox(TextBox key, string name, Func<AppSettings, string> get, Func<AppSettings, string, AppSettings> set)
+    {
+        key.ReadOnly = true; key.TextAlign = HorizontalAlignment.Center; key.AccessibleName = name; key.Cursor = Cursors.Hand; binder.Text(key, get, set);
+        key.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin or Keys.Escape or Keys.Tab) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); key.Text = new Hotkey(mods, e.KeyCode).ToString(); };
     }
     static void StyleCombo(ComboBox c)
     {
@@ -182,14 +199,25 @@ public sealed class SettingsForm : Form
         var picked = Dialog(() => { using var dialog = new FolderBrowserDialog { InitialDirectory = directory.Text, Description = "Clip folder", UseDescriptionForTitle = true }; return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : null; });
         if (picked != null && picked != directory.Text) { directory.Text = picked; Commit(); }
     }
+    void BrowseScreenshots()
+    {
+        var current = original.ScreenshotFolder();
+        var picked = Dialog(() => { using var dialog = new FolderBrowserDialog { InitialDirectory = Directory.Exists(current) ? current : original.ClipsDirectory, Description = "Screenshot folder", UseDescriptionForTitle = true }; return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : null; });
+        if (picked != null && picked != screenshotDirectory.Text) { screenshotDirectory.Text = picked; Commit(); }
+    }
     // Own dialogs take the focus; the popup must stay open behind them.
     T Dialog<T>(Func<T> show) { dialogs++; try { return show(); } finally { dialogs--; } }
 
     void EngineStatus(object? sender, EventArgs args) { if (!IsDisposed) UpdateStatus(); }
-    // True while the user records a new save hotkey here (in front, a hotkey box focused): the old one must not save.
-    internal bool RecordingHotkey => Visible && WindowChrome.IsForeground(Handle) && (hotkey.Focused || hotkey2.Focused);
-    // The draft as it would be applied (hotkey in its canonical spelling), or ArgumentException when invalid.
-    public AppSettings ReadSettings() { var s = binder.Draft with { Hotkey = Hotkey.Parse(binder.Draft.Hotkey).ToString(), ClipsDirectory = binder.Draft.ClipsDirectory.Trim() }; s.Validate(); return s; }
+    // True while the user records a new hotkey here (in front, a hotkey box focused): the old ones must not fire.
+    internal bool RecordingHotkey => Visible && WindowChrome.IsForeground(Handle) && (hotkey.Focused || hotkey2.Focused || screenshotHotkey.Focused);
+    // The draft as it would be applied (hotkeys in their canonical spelling), or ArgumentException when invalid.
+    public AppSettings ReadSettings()
+    {
+        var d = binder.Draft;
+        var s = d with { Hotkey = Hotkey.Parse(d.Hotkey).ToString(), ScreenshotHotkey = Hotkey.Parse(d.ScreenshotHotkey).ToString(), ClipsDirectory = d.ClipsDirectory.Trim(), ScreenshotsDirectory = d.ScreenshotsDirectory.Trim() };
+        s.Validate(); return s;
+    }
     void UpdateBudget()
     {
         var s = binder.Draft; var clip = FormatSize(CapturePolicy.EstimatedClipMegabytes(s));
