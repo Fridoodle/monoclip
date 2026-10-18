@@ -1,4 +1,5 @@
 using MonoClip.Core;
+using MonoClip.Windows.Capture;
 using MonoClip.Windows.Share;
 using System.Runtime.InteropServices;
 namespace MonoClip.Windows.UI;
@@ -12,7 +13,7 @@ public sealed class TrayAppContext : ApplicationContext
     const int SpinnerFrames = 12;
     static readonly TimeSpan ErrorShown = TimeSpan.FromSeconds(6);
     readonly SoundEffects sounds = new(); readonly Action<Sound> playSound;
-    readonly IClipEngine engine; AppSettings settings; readonly string settingsPath; readonly NotifyIcon tray; readonly HotkeyRegistration hotkeys;
+    readonly IClipEngine engine; AppSettings settings; readonly string settingsPath; readonly NotifyIcon tray; readonly HotkeyRegistration hotkeys, screenshotKeys;
     readonly ToolStripMenuItem toggleItem, saveItem; SettingsForm? form; bool disposed; string? lastClip;
     readonly IClipSharer? sharer; readonly ToolStripMenuItem shareItem, copyLinkItem; ShareInfo? lastShare; int lastShareMinutes;
     readonly System.Windows.Forms.Timer shareTicker = new() { Interval = 30000 }, animation = new() { Interval = 90 };
@@ -20,6 +21,8 @@ public sealed class TrayAppContext : ApplicationContext
     int spinnerFrame; string? errorText; DateTime errorUntil;
     // Replaceable so tests never touch the real clipboard.
     public Action<string> CopyText { get; set; } = text => Clipboard.SetText(text);
+    // Replaceable so tests never copy the real screen.
+    internal Func<(Bitmap Image, string App)> CaptureScreen { get; set; } = Screenshot.CaptureActiveMonitor;
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
     // soundOverride hears the cues instead of the speakers (tests). Without a sharer there is no sharing.
     public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath, bool showSettings = false, Action<Sound>? soundOverride = null, IClipSharer? sharer = null)
@@ -33,12 +36,14 @@ public sealed class TrayAppContext : ApplicationContext
         shareItem = Item($"Quick share last clip ({settings.ShareMinutes} min)", ToggleShare); shareItem.Visible = sharer != null;
         Item("Export clip", EditLastClip); copyLinkItem = Item("Copy link", () => Run(CopyShareLink)); copyLinkItem.Visible = false;
         menu.Opening += (_, _) => UpdateShareItems();
-        menu.Items.Add(new ToolStripSeparator()); Item("Settings", () => ShowSettingsAt(Cursor.Position)); Item("Open clip folder", () => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip)));
+        menu.Items.Add(new ToolStripSeparator()); Item("Settings", () => ShowSettingsAt(Cursor.Position)); Item("Open folder", () => Run(() => WindowsIntegration.OpenLatest(this.settings, lastClip)));
         menu.Items.Add(new ToolStripSeparator()); Item("Exit", ExitThread);
         tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettingsAt(Cursor.Position);
         // While the settings window records a new hotkey, pressing the old one must not save a clip.
         hotkeys = new(() => Run(engine.SaveClip)) { Suppressed = () => form is { IsDisposed: false } f && f.RecordingHotkey };
+        screenshotKeys = new(() => Run(TakeScreenshot)) { Suppressed = hotkeys.Suppressed };
         try { hotkeys.Set(Hotkey.Parse(settings.Hotkey)); } catch (Exception e) { Fail("Hotkey unavailable: " + e.Message); }
+        try { screenshotKeys.Set(Hotkey.Parse(settings.ScreenshotHotkey)); } catch (Exception e) { Fail("Screenshot hotkey unavailable: " + e.Message); }
         engine.StatusChanged += StatusChanged; engine.Failed += EngineFailed; engine.ClipSaved += ClipSaved; if (sharer != null) sharer.Changed += ShareChanged;
         if (settings.StartBufferOnLaunch) Run(() => engine.Start(this.settings));
         UpdateTray(); if (showSettings || !settings.StartMinimized) ShowSettings();
@@ -101,10 +106,12 @@ public sealed class TrayAppContext : ApplicationContext
     // Applies new settings everywhere or nowhere: each step that took effect is undone when a later one fails.
     void SaveSettings(AppSettings next)
     {
-        next.Validate(); var parsed = Hotkey.Parse(next.Hotkey); var old = settings with { }; var undo = new List<Action>();
+        next.Validate(); var parsed = Hotkey.Parse(next.Hotkey); var screenshot = Hotkey.Parse(next.ScreenshotHotkey); var old = settings with { }; var undo = new List<Action>();
+        if (screenshot == parsed) throw new ArgumentException("The screenshot hotkey must differ from the save hotkey.");
         try
         {
             hotkeys.Set(parsed); undo.Add(() => hotkeys.Set(Hotkey.Parse(old.Hotkey)));
+            screenshotKeys.Set(screenshot); undo.Add(() => screenshotKeys.Set(Hotkey.Parse(old.ScreenshotHotkey)));
             engine.Apply(next); undo.Add(() => engine.Apply(old));
             if ((next.StartWithWindows || old.StartWithWindows) && WindowsIntegration.SyncAutostart(next.StartWithWindows, Environment.ProcessPath!))
                 undo.Add(() => WindowsIntegration.SetAutostart(old.StartWithWindows, Environment.ProcessPath!));
@@ -233,6 +240,27 @@ public sealed class TrayAppContext : ApplicationContext
         // Auto-share replaces a link that is still online: the newest clip is the one to post.
         if (settings.AutoShare && sharer != null) { sharer.Stop(); _ = ShareClip(args.Clip.Path); }
     }
+    // The picture is taken at once (the moment the key is pressed); the PNG is written in the background.
+    void TakeScreenshot()
+    {
+        (Bitmap Image, string App) shot;
+        try { shot = CaptureScreen(); } catch (Exception e) { Fail("Screenshot failed: " + e.Message); return; }
+        _ = SaveScreenshot(shot.Image, shot.App, settings.ScreenshotFolder());
+    }
+    async Task SaveScreenshot(Bitmap image, string app, string folder)
+    {
+        string? path = null;
+        try
+        {
+            await Task.Run(() => { using (image) { path = Screenshots.Reserve(folder, app, DateTimeOffset.Now); image.Save(path, System.Drawing.Imaging.ImageFormat.Png); } });
+            Cue(Sound.Screenshot); form?.Feedback("Screenshot saved: " + path);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            if (path != null) try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            Fail("Screenshot failed: " + e.Message);
+        }
+    }
     // The sound setting switches all cues off; feedback then stays in the tray symbol and tooltip.
     void Cue(Sound sound) { if (settings.ClipBeep) playSound(sound); }
     void Fail(string message) { errorText = message; errorUntil = DateTime.UtcNow + ErrorShown; Cue(Sound.Error); form?.Feedback(message); UpdateTray(); }
@@ -259,7 +287,7 @@ public sealed class TrayAppContext : ApplicationContext
         if (disposing && !disposed)
         {
             engine.Dispose(); disposed = true; engine.StatusChanged -= StatusChanged; engine.Failed -= EngineFailed; engine.ClipSaved -= ClipSaved; if (sharer != null) { sharer.Changed -= ShareChanged; sharer.Dispose(); }
-            shareTicker.Dispose(); animation.Dispose(); hotkeys.Dispose(); form?.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose();
+            shareTicker.Dispose(); animation.Dispose(); hotkeys.Dispose(); screenshotKeys.Dispose(); form?.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose();
             foreach (var icon in icons.Values.Concat(spinner)) icon.Dispose(); sounds.Dispose();
         }
         base.Dispose(disposing);

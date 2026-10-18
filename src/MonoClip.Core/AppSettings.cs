@@ -38,6 +38,11 @@ public sealed record AppSettings
     // Folder the export editor last saved to; empty means the Videos folder.
     public string ExportDirectory { get; set; } = "";
     public string ExportFolder() => !string.IsNullOrWhiteSpace(ExportDirectory) && Directory.Exists(ExportDirectory) ? ExportDirectory : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+    // Saves a picture of the monitor the user is on (see Screenshots).
+    public string ScreenshotHotkey { get; set; } = "Ctrl+Shift+F10";
+    // Folder for screenshots; empty means the Screenshots folder in the clip folder.
+    public string ScreenshotsDirectory { get; set; } = "";
+    public string ScreenshotFolder() => string.IsNullOrWhiteSpace(ScreenshotsDirectory) ? Path.Combine(ClipsDirectory, Screenshots.DefaultFolderName) : ScreenshotsDirectory;
     public string MicrophoneDevice { get; set; } = "default";
     public string DesktopDevice { get; set; } = "default";
     public void Validate()
@@ -48,6 +53,9 @@ public sealed record AppSettings
         if (!Enum.IsDefined(Quality)) throw new ArgumentException("Unknown quality preset.");
         if (string.IsNullOrWhiteSpace(Hotkey)) throw new ArgumentException("Hotkey is required.");
         if (string.IsNullOrWhiteSpace(ClipsDirectory) || !Path.IsPathFullyQualified(ClipsDirectory) || ClipsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0) throw new ArgumentException("Clip folder must be a valid absolute path.");
+        if (string.IsNullOrWhiteSpace(ScreenshotHotkey)) throw new ArgumentException("Screenshot hotkey is required.");
+        if (string.Equals(ScreenshotHotkey.Trim(), Hotkey.Trim(), StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The screenshot hotkey must differ from the save hotkey.");
+        if (!string.IsNullOrWhiteSpace(ScreenshotsDirectory) && (!Path.IsPathFullyQualified(ScreenshotsDirectory) || ScreenshotsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0)) throw new ArgumentException("Screenshot folder must be a valid absolute path.");
         if (string.IsNullOrWhiteSpace(MicrophoneDevice) || string.IsNullOrWhiteSpace(DesktopDevice)) throw new ArgumentException("Audio devices must not be empty.");
         if (ClipSeconds is < MinClipSeconds or > MaxClipSeconds) throw new ArgumentException($"Clip duration must be between {MinClipSeconds} and {MaxClipSeconds} seconds.");
         if (ShareMinutes is < SharePolicy.MinMinutes or > SharePolicy.MaxMinutes) throw new ArgumentException($"Link lifetime must be {SharePolicy.MinMinutes}-{SharePolicy.MaxMinutes} minutes.");

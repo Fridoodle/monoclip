@@ -45,7 +45,7 @@ internal static class SoundAndIconTests
         }
         var distinct = waves.Values.Select(w => Convert.ToBase64String(SHA256.HashData(MemoryMarshal.AsBytes(w.AsSpan())))).Distinct().Count();
         if (distinct != waves.Count) throw new Exception("two cues are identical");
-        if (waves.Count != 8) throw new Exception("expected 8 cues, found " + waves.Count);
+        if (waves.Count != 9) throw new Exception("expected 9 cues, found " + waves.Count);
         if (waves[Sound.Link].Length <= waves[Sound.Clip].Length) throw new Exception("link cue should ring out longer than the clip cue");
     }
 

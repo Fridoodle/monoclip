@@ -29,7 +29,7 @@ internal static class TraySharingTests
 
         var autoShare = new AppSettings
         {
-            AutoShare = true, ShareMinutes = 10, Hotkey = "Ctrl+Alt+Shift+F6", StartBufferOnLaunch = false, ClipsDirectory = dir,
+            AutoShare = true, ShareMinutes = 10, Hotkey = "Ctrl+Alt+Shift+F6", ScreenshotHotkey = "Ctrl+Alt+Shift+F17", StartBufferOnLaunch = false, ClipsDirectory = dir,
         };
         using var ctx = new TrayAppContext(new FakeEngine(), autoShare, Path.Combine(dir, "settings.json"), false, played.Add, sharer)
         {
@@ -43,7 +43,7 @@ internal static class TraySharingTests
         Equal(Link, copied);
         Equal("Clip,Upload,Link", string.Join(",", played));
 
-        var manual = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F5", StartBufferOnLaunch = false, ClipsDirectory = dir };
+        var manual = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F5", ScreenshotHotkey = "Ctrl+Alt+Shift+F18", StartBufferOnLaunch = false, ClipsDirectory = dir };
         using var off = new TrayAppContext(new FakeEngine(), manual, Path.Combine(dir, "b.json"), false, _ => { }, sharer);
         sharer.Stop();
         sharer.SharedClip = null;
@@ -54,7 +54,7 @@ internal static class TraySharingTests
         copied = null;
         var noCopy = new AppSettings
         {
-            AutoShare = true, CopyShareLink = false, Hotkey = "Ctrl+Alt+Shift+F7", StartBufferOnLaunch = false, ClipsDirectory = dir,
+            AutoShare = true, CopyShareLink = false, Hotkey = "Ctrl+Alt+Shift+F7", ScreenshotHotkey = "Ctrl+Alt+Shift+F19", StartBufferOnLaunch = false, ClipsDirectory = dir,
         };
         using var quiet = new TrayAppContext(new FakeEngine(), noCopy, Path.Combine(dir, "c.json"), false, _ => { }, sharer)
         {
@@ -73,7 +73,7 @@ internal static class TraySharingTests
         var sharer = new FakeSharer();
         var played = new List<Sound>();
         string? opened = null;
-        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F4", StartBufferOnLaunch = false, ClipsDirectory = dir };
+        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F4", ScreenshotHotkey = "Ctrl+Alt+Shift+F20", StartBufferOnLaunch = false, ClipsDirectory = dir };
         using var ctx = new TrayAppContext(new FakeEngine(), settings, Path.Combine(dir, "settings.json"), false, played.Add, sharer)
         {
             CopyText = _ => { },
@@ -110,13 +110,13 @@ internal static class TraySharingTests
         var sharer = new FakeSharer();
         string? copied = null;
 
-        var plainSettings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F7", StartBufferOnLaunch = false, ClipsDirectory = dir };
+        var plainSettings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F7", ScreenshotHotkey = "Ctrl+Alt+Shift+F21", StartBufferOnLaunch = false, ClipsDirectory = dir };
         using (var plain = new TrayAppContext(new FakeEngine(), plainSettings, Path.Combine(dir, "a.json")))
         {
             if (MenuItems(plain).Any(i => i.Text!.Contains("Share") && i.Available)) throw new Exception("share item shown without a sharer");
         }
 
-        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F8", StartBufferOnLaunch = false, ClipsDirectory = dir };
+        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F8", ScreenshotHotkey = "Ctrl+Alt+Shift+F22", StartBufferOnLaunch = false, ClipsDirectory = dir };
         using var ctx = new TrayAppContext(new FakeEngine(), settings, Path.Combine(dir, "settings.json"), false, _ => { }, sharer)
         {
             CopyText = text => copied = text,
@@ -161,7 +161,7 @@ internal static class TraySharingTests
         string? opened = null;
         TrayAppContext.ExportChoice? answer = null;
         var played = new List<Sound>();
-        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F2", StartBufferOnLaunch = false, ClipsDirectory = dir };
+        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F2", ScreenshotHotkey = "Ctrl+Alt+Shift+F23", StartBufferOnLaunch = false, ClipsDirectory = dir };
         using var ctx = new TrayAppContext(new FakeEngine(), settings, Path.Combine(dir, "s.json"), false, played.Add, sharer)
         {
             CopyText = _ => { },

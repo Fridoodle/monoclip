@@ -15,6 +15,7 @@ internal static class SettingsFormTests
         Test("Sort clips by application is an advanced setting, on by default", SortByAppIsAdvanced);
         Test("Player page is the default, direct video link is an advanced option", DirectLinkIsAdvanced);
         Test("Estimated size formatting", FormatsEstimatedSize);
+        Test("Screenshot hotkey and folder are full settings; the folder defaults to the clip folder's Screenshots", ScreenshotSettings);
     }
 
     static void ValidatesAndClosesToHidden()
@@ -238,6 +239,43 @@ internal static class SettingsFormTests
         Equal("5.0 MB", SettingsForm.FormatSize(5).Replace(',', '.'));
         Equal("58 MB", SettingsForm.FormatSize(57.6));
         Equal("1.5 GB", SettingsForm.FormatSize(1536).Replace(',', '.'));
+    }
+
+    static void ScreenshotSettings()
+    {
+        using var form = NewSettingsForm();
+        form.Show();
+        Application.DoEvents();
+        var key = Field<TextBox>(form, "screenshotHotkey");
+        var folder = Field<TextBox>(form, "screenshotDirectory");
+        if (key.Visible || folder.Visible) throw new Exception("screenshot settings on the home page");
+        Field<Button>(form, "gear").PerformClick();
+        Application.DoEvents();
+        if (!key.Visible || !folder.Visible || !Field<Button>(form, "defaultScreenshots").Visible) throw new Exception("screenshot settings missing on the settings page");
+
+        var read = form.ReadSettings();
+        Equal("Ctrl+Shift+F10", read.ScreenshotHotkey);
+        Equal("", read.ScreenshotsDirectory);
+        Equal(Path.Combine(read.ClipsDirectory, "Screenshots"), read.ScreenshotFolder());
+        Equal(read.ScreenshotFolder(), folder.Text); // the field shows the folder in use, also the default one
+
+        key.Text = "Ctrl+Alt+F8";
+        Equal("Ctrl+Alt+F8", form.ReadSettings().ScreenshotHotkey);
+        key.Text = form.ReadSettings().Hotkey;
+        try
+        {
+            form.ReadSettings();
+            throw new Exception("screenshot hotkey equal to the save hotkey accepted");
+        }
+        catch (ArgumentException) { }
+        key.Text = "Ctrl+Alt+F8";
+
+        folder.Text = @"D:\Shots";
+        Equal(@"D:\Shots", form.ReadSettings().ScreenshotFolder());
+        Field<Button>(form, "defaultScreenshots").PerformClick();
+        Equal("", form.ReadSettings().ScreenshotsDirectory);
+        Equal(read.ScreenshotFolder(), folder.Text);
+        form.Close();
     }
 
     // Sends a real WM_MOUSEWHEEL, as the mouse would, to the control under the cursor.

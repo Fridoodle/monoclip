@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
+using MonoClip.Windows.Capture;
 using MonoClip.Core;
 using MonoClip.Windows.UI;
 using static UiTest;
@@ -13,13 +15,15 @@ internal static class TrayTests
         Test("Clip sound fires only after success and honors the current sound toggle", ClipSoundFollowsToggle);
         Test("Default launch starts the replay buffer", DefaultLaunchStartsBuffer);
         Test("Manual buffer start/stop, stopping a share and launch have their own sounds", OwnSoundsForEachAction);
+        Test("Screenshot hotkey saves a PNG named after the app into the clip folder's Screenshots, or a folder of choice", ScreenshotsAreSaved);
+        Test("Screenshot copies a whole monitor at its full resolution", ScreenshotCopiesAMonitor);
     }
 
     static void TrayOnlyLaunch()
     {
         using var temp = new TempFolder("MonoClip-ui-");
         var dir = temp.Path;
-        var settings = new AppSettings { Hotkey = "Alt+Shift+F10", StartMinimized = true, StartBufferOnLaunch = false };
+        var settings = new AppSettings { Hotkey = "Alt+Shift+F10", ScreenshotHotkey = "Ctrl+Alt+Shift+F13", StartMinimized = true, StartBufferOnLaunch = false };
         using var ctx = new TrayAppContext(new FakeEngine(), settings, Path.Combine(dir, "settings.json"));
         var tray = Tray(ctx);
         var menu = tray.ContextMenuStrip!;
@@ -89,7 +93,7 @@ internal static class TrayTests
         var engine = new FakeEngine();
         using var temp = new TempFolder("MonoClip-cue-test-");
         var dir = temp.Path;
-        var settings = new AppSettings { ClipBeep = true, Hotkey = "Ctrl+Alt+Shift+F10", StartBufferOnLaunch = false };
+        var settings = new AppSettings { ClipBeep = true, Hotkey = "Ctrl+Alt+Shift+F10", ScreenshotHotkey = "Ctrl+Alt+Shift+F14", StartBufferOnLaunch = false };
         using var ctx = new TrayAppContext(engine, settings, Path.Combine(dir, "settings.json"), false, played.Add);
         Equal(0, played.Count);
         var record = new ClipRecord(Path.Combine(dir, "unit-fixture.mkv"), "Fixture", DateTimeOffset.Now, 5, 1280, 720, 30, "test",
@@ -112,7 +116,7 @@ internal static class TrayTests
         using var temp = new TempFolder("MonoClip-ui-");
         var dir = temp.Path;
         var engine = new FakeEngine();
-        using var ctx = new TrayAppContext(engine, new AppSettings { Hotkey = "Ctrl+Alt+Shift+F9" }, Path.Combine(dir, "settings.json"));
+        using var ctx = new TrayAppContext(engine, new AppSettings { Hotkey = "Ctrl+Alt+Shift+F9", ScreenshotHotkey = "Ctrl+Alt+Shift+F15" }, Path.Combine(dir, "settings.json"));
         if (!engine.IsRunning) throw new Exception("buffer not started by default");
     }
 
@@ -123,7 +127,7 @@ internal static class TrayTests
         var played = new List<Sound>();
         var sharer = new FakeSharer();
         var engine = new FakeEngine();
-        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F3", StartBufferOnLaunch = true, ClipsDirectory = dir };
+        var settings = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F3", ScreenshotHotkey = "Ctrl+Alt+Shift+F16", StartBufferOnLaunch = true, ClipsDirectory = dir };
         using var ctx = new TrayAppContext(engine, settings, Path.Combine(dir, "s.json"), false, played.Add, sharer) { CopyText = _ => { } };
         Equal(0, played.Count);
         ctx.AnnounceStart();
@@ -143,5 +147,79 @@ internal static class TrayTests
         played.Clear();
         share.PerformClick();
         Equal("ShareStopped", string.Join(",", played));
+    }
+
+    static void ScreenshotsAreSaved()
+    {
+        using var temp = new TempFolder("MonoClip-shots-");
+        var dir = temp.Path;
+        var played = new List<Sound>();
+        var settings = new AppSettings
+        {
+            Hotkey = "Ctrl+Alt+Shift+F12", ScreenshotHotkey = "Ctrl+Alt+Shift+F24", StartBufferOnLaunch = false, ClipsDirectory = Path.Combine(dir, "clips"),
+        };
+        using var ctx = new TrayAppContext(new FakeEngine(), settings, Path.Combine(dir, "settings.json"), false, played.Add);
+        var green = Color.FromArgb(10, 200, 30);
+        ctx.CaptureScreen = () =>
+        {
+            var image = new Bitmap(64, 48);
+            using (var g = Graphics.FromImage(image)) g.Clear(green);
+            return (image, "Valorant");
+        };
+        void Shoot(int sounds)
+        {
+            played.Clear();
+            for (int i = 0; i < sounds; i++) Call(ctx, "TakeScreenshot");
+            PumpUntil(() => played.Count >= sounds, 10000);
+        }
+
+        Shoot(1);
+        Equal("Screenshot", string.Join(",", played));
+        var folder = Path.Combine(dir, "clips", Screenshots.DefaultFolderName);
+        var files = Directory.GetFiles(folder, "*.png");
+        Equal(1, files.Length);
+        if (!Regex.IsMatch(Path.GetFileName(files[0]), @"^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d_Valorant\.png$")) throw new Exception("unexpected name: " + files[0]);
+        using (var saved = new Bitmap(files[0]))
+        {
+            Equal(64, saved.Width);
+            Equal(48, saved.Height);
+            Equal(green.ToArgb(), saved.GetPixel(5, 5).ToArgb());
+        }
+
+        // Two in a row (same second) are two files.
+        Shoot(2);
+        Equal(3, Directory.GetFiles(folder, "*.png").Length);
+
+        // A folder of choice.
+        var custom = Path.Combine(dir, "custom");
+        Call(ctx, "SaveSettings", settings with { ScreenshotsDirectory = custom });
+        Shoot(1);
+        Equal(1, Directory.GetFiles(custom, "*.png").Length);
+        Equal(3, Directory.GetFiles(folder, "*.png").Length);
+
+        // A screen that cannot be copied is an error, not a file.
+        ctx.CaptureScreen = () => throw new InvalidOperationException("no screen");
+        Shoot(1);
+        Equal("Error", string.Join(",", played));
+        if (!Tray(ctx).Text.Contains("Screenshot failed")) throw new Exception("error not in the tooltip: " + Tray(ctx).Text);
+        Equal(1, Directory.GetFiles(custom, "*.png").Length);
+
+        // The screenshot hotkey cannot be the save hotkey.
+        try
+        {
+            Call(ctx, "SaveSettings", settings with { ScreenshotHotkey = settings.Hotkey });
+            throw new Exception("screenshot hotkey equal to the save hotkey accepted");
+        }
+        catch (TargetInvocationException e) when (e.InnerException is ArgumentException) { }
+    }
+
+    static void ScreenshotCopiesAMonitor()
+    {
+        var (image, app) = Screenshot.CaptureActiveMonitor();
+        using (image)
+        {
+            if (!Screen.AllScreens.Any(s => s.Bounds.Size == image.Size)) throw new Exception("not the size of a monitor: " + image.Size);
+            if (string.IsNullOrWhiteSpace(app)) throw new Exception("no app name");
+        }
     }
 }

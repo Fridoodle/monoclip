@@ -409,6 +409,45 @@ Test("clip edits know when they change the clip and estimate the shared size",()
     Equal(30_000_000L,new ClipEdit(TimeSpan.FromSeconds(30),TimeSpan.FromSeconds(60)).EstimateBytes(90_000_000,length));
 });
 // NEXT_TEST
+Test("screenshots go to the clip folder's Screenshots folder unless another folder is set",()=>{
+    var s=new AppSettings{ClipsDirectory=@"C:\Clips"};
+    Equal(@"C:\Clips\Screenshots",s.ScreenshotFolder());
+    Equal(@"D:\Shots",(s with{ScreenshotsDirectory=@"D:\Shots"}).ScreenshotFolder());
+    Equal(@"E:\Moved\Screenshots",(s with{ClipsDirectory=@"E:\Moved"}).ScreenshotFolder());
+});
+Test("screenshot settings reject an empty hotkey, the save hotkey and a relative folder",()=>{
+    new AppSettings{ScreenshotsDirectory=@"D:\Shots"}.Validate();
+    Throws<ArgumentException>(()=>new AppSettings{ScreenshotHotkey=""}.Validate());
+    Throws<ArgumentException>(()=>new AppSettings{Hotkey="Ctrl+Shift+F9",ScreenshotHotkey="ctrl+shift+f9"}.Validate());
+    Throws<ArgumentException>(()=>new AppSettings{ScreenshotsDirectory="shots"}.Validate());
+});
+Test("screenshot names carry the app and time and never overwrite each other",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-shot-names-"+Guid.NewGuid());
+    try{
+        var time=new DateTimeOffset(2026,10,18,21,4,5,TimeSpan.Zero);
+        var first=Screenshots.Reserve(Path.Combine(dir,"new"),"Valorant",time);
+        Equal(Path.Combine(dir,"new","2026-10-18_21-04-05_Valorant.png"),first);True(File.Exists(first),"name not reserved");
+        Equal(Path.Combine(dir,"new","2026-10-18_21-04-05_Valorant_2.png"),Screenshots.Reserve(Path.Combine(dir,"new"),"Valorant",time));
+        Equal("2026-10-18_21-04-05_Desktop.png",Path.GetFileName(Screenshots.Reserve(dir,"",time)));
+        True(!Path.GetFileName(Screenshots.Reserve(dir,"a/b:c",time)).Contains(':'),"unsafe app name kept");
+    }finally{Directory.Delete(dir,true);}
+});
+Test("open folder picks whatever was saved last, clip or screenshot",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-latest-"+Guid.NewGuid());
+    try{
+        var shots=Path.Combine(dir,"Screenshots");Directory.CreateDirectory(shots);
+        Equal<string?>(null,Screenshots.Latest(Path.Combine(dir,"missing")));Equal<string?>(null,Screenshots.Latest(dir));
+        string Write(string path,int minutesAgo){File.WriteAllText(path,"x");File.SetLastWriteTimeUtc(path,DateTime.UtcNow.AddMinutes(-minutesAgo));return path;}
+        var older=Write(Path.Combine(shots,"b.png"),20);var newer=Write(Path.Combine(shots,"a.png"),10);Write(Path.Combine(shots,"notes.txt"),1);
+        Equal(newer,Screenshots.Latest(shots));
+        var clip=Write(Path.Combine(dir,"clip.mkv"),5);
+        Equal(clip,ClipLibrary.Newest(clip,Screenshots.Latest(shots)));
+        File.SetLastWriteTimeUtc(older,DateTime.UtcNow);
+        Equal(older,ClipLibrary.Newest(clip,Screenshots.Latest(shots)));
+        Equal(clip,ClipLibrary.Newest(clip,null,Path.Combine(dir,"gone.png")));
+        Equal<string?>(null,ClipLibrary.Newest(null,Path.Combine(dir,"gone.mkv")));
+    }finally{Directory.Delete(dir,true);}
+});
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;
 

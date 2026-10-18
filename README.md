@@ -11,6 +11,7 @@ Replay clipping for Windows. MonoClip keeps the last seconds of gameplay in a GP
 - Captures the active window: the hooked game, otherwise the window you are tabbed into, or the monitor when the desktop is active. Works with a controller; the mouse position does not matter.
 - 720p–2160p at 30/60/120 FPS, 5–1000 s clips, three quality presets.
 - Global hotkey (default `Ctrl+Shift+F9`).
+- Screenshots of the monitor you are on as PNG (default `Ctrl+Shift+F10`).
 - Separate desktop and microphone tracks plus a mixed track.
 - Share a clip as a temporary link (5 min–2 h) without port forwarding, accounts or admin rights.
 - Sound cues instead of notifications; tray icon shows the current state.
@@ -38,6 +39,8 @@ Double-click the tray icon (or choose **Settings** in its menu) to open MonoClip
 | Quality (gear) | Balanced (15 Mbit/s at 1080p60) |
 | Desktop audio, microphone, sound effects (gear) | on |
 | Start in tray, start buffer on launch (gear) | on |
+| Screenshot hotkey (gear) | `Ctrl+Shift+F10` |
+| Screenshot folder (gear) | `Screenshots` in the clip folder |
 | Sort clips by application (gear) | on |
 | Share new clips automatically (gear) | off |
 | Copy new links to the clipboard (gear) | on |
