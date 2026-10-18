@@ -4,6 +4,9 @@ namespace MonoClip.Core;
 public static class Screenshots
 {
     public const string DefaultFolderName = "Screenshots";
+    // Newest screenshot in folder, or null.
+    public static string? Latest(string folder) => !Directory.Exists(folder) ? null : new DirectoryInfo(folder).EnumerateFiles("*.png")
+        .OrderByDescending(f => f.LastWriteTimeUtc).ThenByDescending(f => f.Name, StringComparer.Ordinal).FirstOrDefault()?.FullName;
     // Creates the (empty) file right away, so two quick screenshots never pick the same name; a second one in the same
     // second gets "_2", and so on. The picture is written into it afterwards.
     public static string Reserve(string folder, string app, DateTimeOffset time)

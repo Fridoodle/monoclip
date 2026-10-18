@@ -36,7 +36,7 @@ public sealed class TrayAppContext : ApplicationContext
         shareItem = Item($"Quick share last clip ({settings.ShareMinutes} min)", ToggleShare); shareItem.Visible = sharer != null;
         Item("Export clip", EditLastClip); copyLinkItem = Item("Copy link", () => Run(CopyShareLink)); copyLinkItem.Visible = false;
         menu.Opening += (_, _) => UpdateShareItems();
-        menu.Items.Add(new ToolStripSeparator()); Item("Settings", () => ShowSettingsAt(Cursor.Position)); Item("Open clip folder", () => Run(() => WindowsIntegration.OpenClipFolder(this.settings.ClipsDirectory, lastClip)));
+        menu.Items.Add(new ToolStripSeparator()); Item("Settings", () => ShowSettingsAt(Cursor.Position)); Item("Open folder", () => Run(() => WindowsIntegration.OpenLatest(this.settings, lastClip)));
         menu.Items.Add(new ToolStripSeparator()); Item("Exit", ExitThread);
         tray = new NotifyIcon { Icon = icons[(TrayIconKind.Stopped, false)], Text = "MonoClip · Buffer stopped", ContextMenuStrip = menu, Visible = true }; tray.DoubleClick += (_, _) => ShowSettingsAt(Cursor.Position);
         // While the settings window records a new hotkey, pressing the old one must not save a clip.

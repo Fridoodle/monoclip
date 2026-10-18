@@ -432,6 +432,22 @@ Test("screenshot names carry the app and time and never overwrite each other",()
         True(!Path.GetFileName(Screenshots.Reserve(dir,"a/b:c",time)).Contains(':'),"unsafe app name kept");
     }finally{Directory.Delete(dir,true);}
 });
+Test("open folder picks whatever was saved last, clip or screenshot",()=>{
+    var dir=Path.Combine(Path.GetTempPath(),"MonoClip-latest-"+Guid.NewGuid());
+    try{
+        var shots=Path.Combine(dir,"Screenshots");Directory.CreateDirectory(shots);
+        Equal<string?>(null,Screenshots.Latest(Path.Combine(dir,"missing")));Equal<string?>(null,Screenshots.Latest(dir));
+        string Write(string path,int minutesAgo){File.WriteAllText(path,"x");File.SetLastWriteTimeUtc(path,DateTime.UtcNow.AddMinutes(-minutesAgo));return path;}
+        var older=Write(Path.Combine(shots,"b.png"),20);var newer=Write(Path.Combine(shots,"a.png"),10);Write(Path.Combine(shots,"notes.txt"),1);
+        Equal(newer,Screenshots.Latest(shots));
+        var clip=Write(Path.Combine(dir,"clip.mkv"),5);
+        Equal(clip,ClipLibrary.Newest(clip,Screenshots.Latest(shots)));
+        File.SetLastWriteTimeUtc(older,DateTime.UtcNow);
+        Equal(older,ClipLibrary.Newest(clip,Screenshots.Latest(shots)));
+        Equal(clip,ClipLibrary.Newest(clip,null,Path.Combine(dir,"gone.png")));
+        Equal<string?>(null,ClipLibrary.Newest(null,Path.Combine(dir,"gone.mkv")));
+    }finally{Directory.Delete(dir,true);}
+});
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;
 

@@ -3,6 +3,7 @@
 ## 1.3.0
 
 - Screenshots: press **Ctrl+Shift+F10** to save the monitor you are on as a PNG, at its full resolution, with a short shutter sound. They go to a **Screenshots** folder in the clip folder, named after the app in front (e.g. `2026-10-18_21-04-05_Valorant.png`). The hotkey and the folder can be changed under **Settings → Screenshots**; **Use clip folder** goes back to the default.
+- **Open folder** (settings and tray, which now says "Open folder") selects whatever was saved last in Explorer: the last clip or the last screenshot. With a game chosen under **Open folder shows** it still opens that game's clips; **Open folder** under Screenshots selects the newest screenshot.
 
 ## 1.2.2
 

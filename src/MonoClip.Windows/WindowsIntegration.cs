@@ -42,11 +42,21 @@ public static class WindowsIntegration
     // longer touches. Hand those pages back; anything still in use is paged in again on demand. -1: this process.
     public static void TrimMemory() => SetProcessWorkingSetSize(-1, -1, -1);
     // Selects the newest clip when there is one; otherwise opens the (created) folder.
-    public static void OpenClipFolder(string folder, string? preferredClip = null)
+    public static void OpenClipFolder(string folder, string? preferredClip = null) =>
+        Open(folder, preferredClip != null && File.Exists(preferredClip) && IsBelow(preferredClip, folder) ? preferredClip : MonoClip.Core.ClipLibrary.LatestClip(folder));
+    // Selects the newest screenshot when there is one; otherwise opens the (created) folder.
+    public static void OpenScreenshotFolder(string folder) => Open(folder, MonoClip.Core.Screenshots.Latest(folder));
+    // "Open folder": whatever was saved last, the last clip or the last screenshot, selected in Explorer; without either,
+    // the clip folder.
+    public static void OpenLatest(MonoClip.Core.AppSettings settings, string? lastClip = null)
     {
-        Directory.CreateDirectory(folder);
-        var clip = preferredClip != null && File.Exists(preferredClip) && IsBelow(preferredClip, folder) ? preferredClip : MonoClip.Core.ClipLibrary.LatestClip(folder);
-        if (clip != null) RevealInExplorer(clip); else Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+        var clip = lastClip != null && File.Exists(lastClip) ? lastClip : MonoClip.Core.ClipLibrary.LatestClip(settings.ClipsDirectory);
+        Open(settings.ClipsDirectory, MonoClip.Core.ClipLibrary.Newest(clip, MonoClip.Core.Screenshots.Latest(settings.ScreenshotFolder())));
+    }
+    static void Open(string folder, string? select)
+    {
+        if (select != null) { RevealInExplorer(select); return; }
+        Directory.CreateDirectory(folder); Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
     }
     static bool IsBelow(string file, string folder) => Path.GetFullPath(file).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     public static string BuildAutostartCommand(string executablePath)

@@ -39,6 +39,9 @@ public static class ClipLibrary
         return GameFolders(root).Prepend(root).SelectMany(d => Directory.EnumerateFiles(d, "*.mkv")).Select(f => new FileInfo(f))
             .OrderByDescending(f => f.LastWriteTimeUtc).ThenByDescending(f => f.Name, StringComparer.Ordinal).FirstOrDefault()?.FullName;
     }
+    // The most recently written of the given files that exist, e.g. the last clip or screenshot; null without any.
+    public static string? Newest(params string?[] files) => files.OfType<string>().Where(File.Exists).Select(f => new FileInfo(f))
+        .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
     public static IReadOnlyList<string> GetGames(string root) => Directory.Exists(root)
         ? GameFolders(root).Where(d => Directory.EnumerateFiles(d, "*.mkv").Any()).Select(Path.GetFileName).OfType<string>().Order(StringComparer.OrdinalIgnoreCase).ToArray()
         : [];

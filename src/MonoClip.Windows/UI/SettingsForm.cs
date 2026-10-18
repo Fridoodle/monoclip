@@ -45,7 +45,8 @@ public sealed class SettingsForm : Form
         shareStatus.ForeColor = Look.Muted; home.Add(shareStatus, 4);
         home.Section("CLIPS");
         ClipBasics(home, duration, hotkey, directory);
-        Style(openButton, "Open folder"); openButton.Click += (_, _) => Run(() => WindowsIntegration.OpenClipFolder(games.SelectedIndex > 0 ? Path.Combine(original.ClipsDirectory, games.Text) : original.ClipsDirectory));
+        // The last clip or screenshot, or with a game chosen under "Open folder shows" that game's newest clip.
+        Style(openButton, "Open folder"); openButton.Click += (_, _) => Run(() => { if (games.SelectedIndex > 0) WindowsIntegration.OpenClipFolder(Path.Combine(original.ClipsDirectory, games.Text)); else WindowsIntegration.OpenLatest(original); });
         Style(pickButton, "Export a file…"); pickButton.Enabled = false; pickButton.Click += (_, _) => PickAndShare();
         home.Add(new ButtonRow(openButton, pickButton));
         budget.ForeColor = Look.Muted; home.Add(budget, 6);
@@ -79,7 +80,7 @@ public sealed class SettingsForm : Form
         binder.Text(screenshotDirectory, s => s.ScreenshotFolder(), (s, v) => s with { ScreenshotsDirectory = v == (s with { ScreenshotsDirectory = "" }).ScreenshotFolder() ? "" : v });
         screenshotDirectory.Click += (_, _) => BrowseScreenshots(); screenshotDirectory.KeyDown += (_, e) => { if (e.KeyCode is Keys.Enter or Keys.Space) BrowseScreenshots(); };
         var screenshotField = new Field(screenshotDirectory); screenshotField.Click += (_, _) => BrowseScreenshots(); more.Add(new Card("Folder", screenshotField, stretch: true));
-        Style(openScreenshots, "Open folder"); openScreenshots.Click += (_, _) => Run(() => WindowsIntegration.OpenClipFolder(original.ScreenshotFolder()));
+        Style(openScreenshots, "Open folder"); openScreenshots.Click += (_, _) => Run(() => WindowsIntegration.OpenScreenshotFolder(original.ScreenshotFolder()));
         Style(defaultScreenshots, "Use clip folder"); defaultScreenshots.Click += (_, _) => { screenshotDirectory.Text = ""; Commit(); };
         more.Add(new ButtonRow(openScreenshots, defaultScreenshots));
         more.Note("Saves the monitor you are on as a PNG.");
