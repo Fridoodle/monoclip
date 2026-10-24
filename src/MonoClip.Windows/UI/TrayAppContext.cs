@@ -22,13 +22,13 @@ public sealed class TrayAppContext : ApplicationContext
     // Replaceable so tests never touch the real clipboard.
     public Action<string> CopyText { get; set; } = text => Clipboard.SetText(text);
     // Replaceable so tests never copy the real screen.
-    internal Func<(Bitmap Image, string App)> CaptureScreen { get; set; } = Screenshot.CaptureActiveMonitor;
+    internal Func<(Bitmap Image, string App)> CaptureScreen { get; set; }
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
     // soundOverride hears the cues instead of the speakers (tests). Without a sharer there is no sharing.
     public TrayAppContext(IClipEngine engine, AppSettings settings, string settingsPath, bool showSettings = false, Action<Sound>? soundOverride = null, IClipSharer? sharer = null)
     {
         playSound = soundOverride ?? sounds.Play; this.sharer = sharer;
-        this.engine = engine; this.settings = settings with { }; this.settingsPath = settingsPath;
+        this.engine = engine; this.settings = settings with { }; this.settingsPath = settingsPath; CaptureScreen = () => Screenshot.CaptureActiveMonitor(this.settings.StretchToFill);
         BuildIcons(); shareTicker.Tick += (_, _) => UpdateTray(); animation.Tick += (_, _) => Animate();
         var menu = new ContextMenuStrip { BackColor = Color.FromArgb(16, 16, 16), ForeColor = Color.White, ShowImageMargin = false, Renderer = new ToolStripProfessionalRenderer(new MonoMenuColors()) };
         ToolStripMenuItem Item(string text, Action click) { var item = new ToolStripMenuItem(text, null, (_, _) => click()); menu.Items.Add(item); return item; }

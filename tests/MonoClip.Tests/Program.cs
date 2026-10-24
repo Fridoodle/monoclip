@@ -448,6 +448,18 @@ Test("open folder picks whatever was saved last, clip or screenshot",()=>{
         Equal<string?>(null,ClipLibrary.Newest(null,Path.Combine(dir,"gone.mkv")));
     }finally{Directory.Delete(dir,true);}
 });
+Test("a fullscreen game in a resolution of another shape than the desktop counts as stretched",()=>{
+    True(CapturePolicy.IsStretchedMode(1280,960,1920,1080),"4:3 on 16:9");
+    True(CapturePolicy.IsStretchedMode(1440,1080,1920,1080),"1440x1080 on 16:9");
+    True(CapturePolicy.IsStretchedMode(1280,1024,2560,1440),"5:4 on 16:9");
+    True(!CapturePolicy.IsStretchedMode(1920,1080,1920,1080),"desktop mode");
+    True(!CapturePolicy.IsStretchedMode(1280,720,1920,1080),"lower 16:9 is only scaled");
+    True(!CapturePolicy.IsStretchedMode(1366,768,1920,1080),"1366x768 is 16:9 within rounding");
+    True(!CapturePolicy.IsStretchedMode(3440,1440,3440,1440),"ultrawide desktop");
+    True(!CapturePolicy.IsStretchedMode(0,0,1920,1080),"unknown mode");
+    True(new AppSettings().StretchToFill,"stretching is on by default");
+    True(!CapturePolicy.NeedsRestart(new AppSettings(),new AppSettings{StretchToFill=false}),"switching stretch must not restart the buffer");
+});
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;
 

@@ -35,6 +35,9 @@ public sealed record AppSettings
     // Record desktop and microphone again on tracks of their own, so the export editor can mute one (on by default;
     // only when both are recorded). Each extra AAC track costs about 1.5 % of a CPU core.
     public bool SeparateAudioTracks { get; set; } = true;
+    // A game in a stretched resolution (e.g. 4:3 stretched on a 16:9 monitor) fills the clip and screenshots like it fills
+    // the screen (on by default); off keeps its shape with black bars at the sides.
+    public bool StretchToFill { get; set; } = true;
     // Folder the export editor last saved to; empty means the Videos folder.
     public string ExportDirectory { get; set; } = "";
     public string ExportFolder() => !string.IsNullOrWhiteSpace(ExportDirectory) && Directory.Exists(ExportDirectory) ? ExportDirectory : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);

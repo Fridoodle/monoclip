@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Stretched resolutions: a fullscreen game in, say, 4:3 stretched on a 16:9 monitor (Valorant, CS2) now fills clips and screenshots like it fills the screen, instead of leaving black bars at the sides. MonoClip notices when a game switches the monitor to a resolution of another shape than the desktop. For a GPU set to show black bars instead, switch off **Settings → Stretched resolutions fill the clip**.
+
 ## 1.3.0
 
 - Screenshots: press **Ctrl+Shift+F10** to save the monitor you are on as a PNG, at its full resolution, with a short shutter sound. They go to a **Screenshots** folder in the clip folder, named after the app in front (e.g. `2026-10-18_21-04-05_Valorant.png`). The hotkey and the folder can be changed under **Settings → Screenshots**; **Use clip folder** goes back to the default.

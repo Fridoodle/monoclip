@@ -68,7 +68,7 @@ internal static class SettingsFormTests
         Control F(string name) => Field<Control>(form, name);
         string[] basic = ["duration", "hotkey", "autostart", "directory", "pickButton", "toggleButton", "clipButton"];
         string[] advanced = ["resolution", "fps", "quality", "mic", "desktop", "clipBeep", "minimized", "bufferOnLaunch", "games",
-            "shareMinutes", "autoShare", "copyLink", "directLink", "sortByApp"];
+            "shareMinutes", "autoShare", "copyLink", "directLink", "sortByApp", "stretchToFill"];
         foreach (var name in basic) if (!F(name).Visible) throw new Exception(name + " missing on the home page");
         foreach (var name in advanced) if (F(name).Visible) throw new Exception(name + " visible on the home page");
         var budget = (Label)F("budget");
@@ -96,6 +96,9 @@ internal static class SettingsFormTests
         Equal(75, form.ReadSettings().ClipSeconds);
         ((CheckBox)F("autostart2")).Checked = true;
         Equal(true, form.ReadSettings().StartWithWindows);
+        Equal(true, form.ReadSettings().StretchToFill);
+        ((CheckBox)F("stretchToFill")).Checked = false;
+        Equal(false, form.ReadSettings().StretchToFill);
         ((NumericUpDown)F("duration")).Value = 40;
         Equal(40m, ((NumericUpDown)F("duration2")).Value);
         ((TextBox)F("hotkey")).Text = "Ctrl+Alt+F7";

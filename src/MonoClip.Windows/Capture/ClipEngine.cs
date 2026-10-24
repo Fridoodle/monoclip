@@ -36,7 +36,7 @@ public sealed class ClipEngine : IClipEngine
             var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(settings.ClipsDirectory))!);
             if (drive.IsReady && drive.AvailableFreeSpace < 512L * 1024 * 1024) throw new IOException("Less than 512 MB of free disk space. Buffer not started.");
             host = new(); host.Initialize(s.Width, s.Height, s.Fps);
-            capture = new(s.Width, s.Height, wgcMonitors); capture.MonitorFallback += () => SetStatus("Buffer active · WGC fallback");
+            capture = new(s.Width, s.Height, wgcMonitors) { StretchToFill = s.StretchToFill }; capture.MonitorFallback += () => SetStatus("Buffer active · WGC fallback");
             Obs.obs_set_output_source(0, capture.Source);
             // Audio tracks as CapturePolicy lays them out: each source feeds the mix and, when recorded, its own track.
             if (s.DesktopAudio) AddAudio("wasapi_output_capture", "Desktop audio", s.DesktopDevice, CapturePolicy.AudioMixers(s, ClipAudio.Desktop), 1);
@@ -153,7 +153,7 @@ public sealed class ClipEngine : IClipEngine
     public void Apply(AppSettings s)
     {
         s.Validate();
-        if (!IsRunning || !CapturePolicy.NeedsRestart(settings, s)) { settings = s with { }; return; }
+        if (!IsRunning || !CapturePolicy.NeedsRestart(settings, s)) { settings = s with { }; if (capture != null) capture.StretchToFill = s.StretchToFill; return; }
         var old = settings; Stop();
         try { Start(s); } catch { try { Start(old); } catch { } throw; }
     }

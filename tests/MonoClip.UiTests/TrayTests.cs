@@ -215,7 +215,7 @@ internal static class TrayTests
 
     static void ScreenshotCopiesAMonitor()
     {
-        var (image, app) = Screenshot.CaptureActiveMonitor();
+        var (image, app) = Screenshot.CaptureActiveMonitor(stretch: true);
         using (image)
         {
             if (!Screen.AllScreens.Any(s => s.Bounds.Size == image.Size)) throw new Exception("not the size of a monitor: " + image.Size);
