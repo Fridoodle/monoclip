@@ -19,6 +19,9 @@ internal sealed class CaptureScene : IDisposable
     public IntPtr Source => obs_scene_get_source(scene);
     // Raised when a monitor gives DXGI duplication no frames and its capture switches to WGC.
     public event Action? MonitorFallback;
+    // Fill the frame while the user's monitor runs a stretched resolution (see CapturePolicy.IsStretchedMode).
+    public bool StretchToFill { get; set; } = true;
+    bool stretched;
 
     // wgcMonitors: the monitors that needed the WGC fallback, kept by the engine so a restarted buffer starts with it.
     public CaptureScene(int width, int height, HashSet<string> wgcMonitors)
@@ -72,6 +75,7 @@ internal sealed class CaptureScene : IDisposable
     // Returns what is shown now, or null when the picture stays as it was.
     public Shown? Follow()
     {
+        ApplyStretch(StretchToFill && DisplayMode.Stretched(ForegroundTracker.Monitor().Name));
         var (hooked, gameExe, gameTitle) = HookedGame();
         var (handle, info) = ForegroundTracker.ActiveWindow();
         var kind = handle == IntPtr.Zero ? CaptureKind.Keep : CaptureTargetPolicy.Decide(info, hooked ? Path.GetFileName(gameExe) : "", OwnExecutable);
@@ -105,6 +109,13 @@ internal sealed class CaptureScene : IDisposable
             return (true, Str(exe), Str(title));
         }
         finally { bfree(cd.Stack); }
+    }
+    // OBS bounds types: 1 stretches a picture to the frame, 2 fits it inside keeping its shape (black bars).
+    internal void ApplyStretch(bool stretch)
+    {
+        if (stretch == stretched) return;
+        stretched = stretch;
+        foreach (var item in Items) if (item != IntPtr.Zero) obs_sceneitem_set_bounds_type(item, stretch ? 1 : 2);
     }
     // true: shown. null: still warming up, keep the current picture. false: no frames yet.
     bool? FollowWindow(IntPtr handle, WindowInfo info)

@@ -51,6 +51,7 @@ internal static class Obs
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_scene_release(IntPtr scene);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_remove(IntPtr item);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_bounds_type(IntPtr item, int type);
+    [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern int obs_sceneitem_get_bounds_type(IntPtr item);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_bounds_alignment(IntPtr item, uint align);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_bounds(IntPtr item, ref Vec2 bounds);
     [DllImport(D, CallingConvention = CallingConvention.Cdecl)] internal static extern void obs_sceneitem_set_visible(IntPtr item, [MarshalAs(UnmanagedType.I1)] bool visible);

@@ -254,7 +254,7 @@ try {
         Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, tunnel reused for a second (trimmed) clip, offline after stop (status {after})");return 0;
         static string SharePolicyToken()=>MonoClip.Core.SharePolicy.NewToken();
     }
-    if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error")) return RegressionTests.Run(args);
+    if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error" or "--stretch")) return RegressionTests.Run(args);
     if(args.Contains("--game")) {
         var fixture=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../tests/MonoClip.GameFixture/bin/Release/net10.0-windows/MonoClip.GameFixture.exe"));
         if(!File.Exists(fixture))throw new Exception("Direct3D game fixture missing");
@@ -285,7 +285,7 @@ try {
         if(result==null||!File.Exists(result.Path))throw new Exception("replay save failed: "+engine.Status);
         if(engine.TotalFrames<settings.Fps*5)throw new Exception("insufficient frames: "+engine.TotalFrames);
         Console.WriteLine("PASS real replay "+result.Path+" target="+engine.CaptureTarget+" mode="+result.Context.CaptureMode+" encoder="+engine.EncoderName+" frames="+engine.TotalFrames+" dropped="+engine.DroppedFrames);
-        int before=engine.TotalFrames;engine.Apply(settings with{Hotkey="Ctrl+Shift+F10"});if(engine.TotalFrames<before)throw new Exception("non-capture settings discarded replay buffer");
+        int before=engine.TotalFrames;engine.Apply(settings with{Hotkey="Ctrl+Shift+F11"});if(engine.TotalFrames<before)throw new Exception("non-capture settings discarded replay buffer");
         engine.Stop();if(engine.IsRunning)throw new Exception("stop did not stop");
         return 0;
     }

@@ -16,7 +16,7 @@ public sealed class SettingsForm : Form
     readonly NumericUpDown duration = new MonoNumeric(), duration2 = new MonoNumeric(), shareMinutes = new MonoNumeric();
     readonly TextBox hotkey = new(), hotkey2 = new(), directory = new(), directory2 = new(), screenshotHotkey = new(), screenshotDirectory = new();
     readonly CheckBox autostart = new MonoToggle(), autostart2 = new MonoToggle(), separateTracks = new MonoToggle(), mic = new MonoToggle(), desktop = new MonoToggle(), minimized = new MonoToggle(),
-        bufferOnLaunch = new MonoToggle(), clipBeep = new MonoToggle(), autoShare = new MonoToggle(), sortByApp = new MonoToggle(), directLink = new MonoToggle(), copyLink = new MonoToggle();
+        bufferOnLaunch = new MonoToggle(), clipBeep = new MonoToggle(), stretchToFill = new MonoToggle(), autoShare = new MonoToggle(), sortByApp = new MonoToggle(), directLink = new MonoToggle(), copyLink = new MonoToggle();
     readonly MonoSlider quality = new("Performance", "Balanced", "Quality");
     readonly Button toggleButton = new MonoButton(), clipButton = new MonoButton(), shareButton = new MonoButton(), editButton = new MonoButton(), copyLinkButton = new MonoButton(),
         openButton = new MonoButton(), pickButton = new MonoButton(), gear = new MonoButton(), back = new MonoButton(), openScreenshots = new MonoButton(), defaultScreenshots = new MonoButton();
@@ -61,6 +61,8 @@ public sealed class SettingsForm : Form
         StyleCombo(fps); binder.Choice(fps, FrameRates, s => s.Fps, (s, v) => s with { Fps = v }); more.Add(new Card("Frame rate", fps, 130));
         quality.Font = new Font("Segoe UI", 8.5f); quality.AccessibleName = "Quality"; binder.Steps(quality, s => (int)s.Quality, (s, v) => s with { Quality = (QualityPreset)v }); more.Add(new Card("Quality", quality, 230));
         budgetDetail.ForeColor = Look.Muted; more.Add(budgetDetail, 6);
+        Toggle(more, "Stretched resolutions fill the clip", stretchToFill, s => s.StretchToFill, (s, v) => s with { StretchToFill = v });
+        more.Note("A fullscreen game in 4:3 stretched on a 16:9 monitor fills clips and screenshots like the screen. Off: black bars at the sides.");
         more.Section("AUDIO");
         Toggle(more, "Record desktop audio", desktop, s => s.DesktopAudio, (s, v) => s with { DesktopAudio = v });
         Toggle(more, "Record microphone", mic, s => s.Microphone, (s, v) => s with { Microphone = v });

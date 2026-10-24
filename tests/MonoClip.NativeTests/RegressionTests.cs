@@ -158,6 +158,26 @@ internal static class RegressionTests
             Console.WriteLine("PASS capture target observers see updated game/monitor/context exactly once per target change without a game fixture");
             return 0;
         }
+        if (args.Contains("--stretch"))
+        {
+            // The mode reader sees the monitor's real resolution (current mode) and a desktop mode.
+            var screen = Screen.PrimaryScreen!;
+            Check(DisplayMode.Current(screen.DeviceName) == screen.Bounds.Size, $"current mode {DisplayMode.Current(screen.DeviceName)} is not the screen's {screen.Bounds.Size}");
+            Check(DisplayMode.Desktop(screen.DeviceName) is { Width: > 0, Height: > 0 }, "desktop mode unknown");
+            engine.Start(settings);
+            var capture = Field<CaptureScene>(engine, "capture"); var host = Field<ObsHost>(engine, "host");
+            var items = (IntPtr[])typeof(CaptureScene).GetProperty("Items", Fields)!.GetValue(capture)!;
+            int[] Bounds() => items.Select(Obs.obs_sceneitem_get_bounds_type).ToArray();
+            Check(Bounds().All(b => b == 2), "sources do not start fitted");
+            capture.ApplyStretch(true); Check(Bounds().All(b => b == 1), "stretched resolution not stretched");
+            capture.ApplyStretch(false); Check(Bounds().All(b => b == 2), "normal resolution not fitted again");
+            engine.Apply(settings with { StretchToFill = false });
+            Check(!capture.StretchToFill && ReferenceEquals(host, Field<ObsHost>(engine, "host")), "stretch setting restarted the buffer or was not applied");
+            Pump(1500); Check(engine.TotalFrames > 0, "no frames while switching");
+            engine.Stop();
+            Console.WriteLine("PASS stretched resolutions switch the scene between fit and stretch, setting applies live");
+            return 0;
+        }
         if (args.Contains("--rapid-save"))
         {
             int saved = 0;

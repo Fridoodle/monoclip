@@ -35,6 +35,7 @@
     <Compile Include="../../src/MonoClip.Windows/Share/Mf.cs" Link="Mf.cs" />
     <Compile Include="../../src/MonoClip.Windows/Capture/Screenshot.cs" Link="Screenshot.cs" />
     <Compile Include="../../src/MonoClip.Windows/Capture/ForegroundTracker.cs" Link="ForegroundTracker.cs" />
+    <Compile Include="../../src/MonoClip.Windows/Capture/DisplayMode.cs" Link="DisplayMode.cs" />
     <ProjectReference Include="../../src/MonoClip.Core/MonoClip.Core.csproj" />
   </ItemGroup>
 </Project>

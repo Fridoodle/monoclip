@@ -25,6 +25,10 @@ public static class CapturePolicy
     // Keyframe-aligned saves (1 s GOP) run up to a second longer; Matroska overhead is ~2 %.
     public static double EstimatedClipMegabytes(AppSettings s) => TotalKbps(s) * 1000d * (s.ClipSeconds + 0.5) / 8 / (1024 * 1024) * 1.02;
     public static int BufferMegabytes(AppSettings s) => (int)Math.Ceiling(TotalKbps(s) * (s.ClipSeconds + 2d) / (8 * 1024) * 1.3) + 16;
+    // A fullscreen game in a resolution of another shape than the desktop (e.g. 4:3 on 16:9): the monitor stretches it over
+    // the whole panel, so the clip does too. The same shape at a lower resolution is only scaled.
+    public static bool IsStretchedMode(int width, int height, int desktopWidth, int desktopHeight) =>
+        width > 0 && height > 0 && desktopWidth > 0 && desktopHeight > 0 && Math.Abs((double)width / height - (double)desktopWidth / desktopHeight) > 0.01;
     // A running buffer is rebuilt when one of the settings it was started with changes; everything else (hotkey,
     // sharing, sorting, sounds…) applies to the next clip as it is.
     public static bool NeedsRestart(AppSettings running, AppSettings next) =>
