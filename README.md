@@ -39,6 +39,8 @@ Double-click the tray icon (or choose **Settings** in its menu) to open MonoClip
 | Quality (gear) | Balanced (15 Mbit/s at 1080p60) |
 | Desktop audio, microphone, sound effects (gear) | on |
 | Start in tray, start buffer on launch (gear) | on |
+| Output device, microphone (gear) | Windows default |
+| Desktop and mic volume (gear) | 100 % (0–200 %, with a live level preview) |
 | Screenshot hotkey (gear) | `Ctrl+Shift+F10` |
 | Screenshot folder (gear) | `Screenshots` in the clip folder |
 | Sort clips by application (gear) | on |

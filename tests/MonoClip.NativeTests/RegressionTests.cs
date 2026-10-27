@@ -178,6 +178,39 @@ internal static class RegressionTests
             Console.WriteLine("PASS stretched resolutions switch the scene between fit and stretch, setting applies live");
             return 0;
         }
+        if (args.Contains("--audio-devices"))
+        {
+            // Lists Windows' devices and reads the default devices' levels for 2 s (a level only shows with sound playing or
+            // someone speaking). Needs at least one output and one microphone.
+            var outputs = AudioDevices.List(input: false); var inputs = AudioDevices.List(input: true);
+            foreach (var (id, name) in outputs) Console.WriteLine($"OUTPUT {name}  [{id}]");
+            foreach (var (id, name) in inputs) Console.WriteLine($"INPUT  {name}  [{id}]");
+            Check(outputs.Count > 0 && inputs.Count > 0, "no output or no microphone found");
+            Check(outputs.All(d => d.Id.Length > 0 && d.Name.Length > 0 && d.Name != d.Id), "device without a name");
+            float outPeak = 0, inPeak = 0;
+            using (var output = new AudioDevices.Meter(AudioDevices.Default, input: false)) using (var mic = new AudioDevices.Meter(inputs[0].Id, input: true))
+            {
+                var clock = Stopwatch.StartNew();
+                while (clock.ElapsedMilliseconds < 2000) { outPeak = Math.Max(outPeak, output.Peak); inPeak = Math.Max(inPeak, mic.Peak); Thread.Sleep(20); }
+            }
+            Console.WriteLine($"LEVEL default output peak {outPeak:0.000}, {inputs[0].Name} peak {inPeak:0.000}");
+            Console.WriteLine($"PASS {outputs.Count} outputs and {inputs.Count} microphones listed with names; level meters open and read");
+            return 0;
+        }
+        if (args.Contains("--volume"))
+        {
+            var withAudio = settings with { DesktopAudio = true, Microphone = true, DesktopVolume = 150, MicrophoneVolume = 40 };
+            engine.Start(withAudio);
+            IntPtr desktop = Field<IntPtr>(engine, "desktopAudio"), mic = Field<IntPtr>(engine, "microphone"); var host = Field<ObsHost>(engine, "host");
+            Check(Math.Abs(Obs.obs_source_get_volume(desktop) - 1.5f) < 0.001 && Math.Abs(Obs.obs_source_get_volume(mic) - 0.4f) < 0.001, "volumes not set on start");
+            engine.Apply(withAudio with { DesktopVolume = 0, MicrophoneVolume = 200 });
+            Check(Math.Abs(Obs.obs_source_get_volume(desktop)) < 0.001 && Math.Abs(Obs.obs_source_get_volume(mic) - 2f) < 0.001, "volume change not applied");
+            Check(ReferenceEquals(host, Field<ObsHost>(engine, "host")), "volume change restarted the buffer");
+            Pump(1500); Check(engine.TotalFrames > 0, "no frames");
+            engine.Stop();
+            Console.WriteLine("PASS desktop and mic volume are set on the audio sources and change without a restart");
+            return 0;
+        }
         if (args.Contains("--rapid-save"))
         {
             int saved = 0;

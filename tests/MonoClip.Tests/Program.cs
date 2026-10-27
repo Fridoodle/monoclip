@@ -460,6 +460,14 @@ Test("a fullscreen game in a resolution of another shape than the desktop counts
     True(new AppSettings().StretchToFill,"stretching is on by default");
     True(!CapturePolicy.NeedsRestart(new AppSettings(),new AppSettings{StretchToFill=false}),"switching stretch must not restart the buffer");
 });
+Test("audio devices follow the Windows default and volumes are 0-200 %",()=>{
+    var s=new AppSettings();Equal("default",s.MicrophoneDevice);Equal("default",s.DesktopDevice);Equal(100,s.MicrophoneVolume);Equal(100,s.DesktopVolume);
+    new AppSettings{MicrophoneVolume=0,DesktopVolume=200}.Validate();
+    Throws<ArgumentException>(()=>new AppSettings{MicrophoneVolume=201}.Validate());
+    Throws<ArgumentException>(()=>new AppSettings{DesktopVolume=-1}.Validate());
+    True(!CapturePolicy.NeedsRestart(s,s with{MicrophoneVolume=150,DesktopVolume=50}),"volume must not restart the buffer");
+    True(CapturePolicy.NeedsRestart(s,s with{MicrophoneDevice="{x}"}),"another device needs a restart");
+});
 Console.WriteLine($"RESULT {count - failures}/{count} passed");
 return failures == 0 && count > 0 ? 0 : 1;
 

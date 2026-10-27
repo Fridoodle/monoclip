@@ -16,6 +16,7 @@ internal static class SettingsFormTests
         Test("Player page is the default, direct video link is an advanced option", DirectLinkIsAdvanced);
         Test("Estimated size formatting", FormatsEstimatedSize);
         Test("Screenshot hotkey and folder are full settings; the folder defaults to the clip folder's Screenshots", ScreenshotSettings);
+        Test("Output and mic follow the Windows default unless chosen; volumes with a level preview; an unplugged device stays chosen", AudioDeviceSettings);
     }
 
     static void ValidatesAndClosesToHidden()
@@ -68,7 +69,7 @@ internal static class SettingsFormTests
         Control F(string name) => Field<Control>(form, name);
         string[] basic = ["duration", "hotkey", "autostart", "directory", "pickButton", "toggleButton", "clipButton"];
         string[] advanced = ["resolution", "fps", "quality", "mic", "desktop", "clipBeep", "minimized", "bufferOnLaunch", "games",
-            "shareMinutes", "autoShare", "copyLink", "directLink", "sortByApp", "stretchToFill"];
+            "shareMinutes", "autoShare", "copyLink", "directLink", "sortByApp", "stretchToFill", "desktopDevice", "micDevice", "desktopVolume", "micVolume"];
         foreach (var name in basic) if (!F(name).Visible) throw new Exception(name + " missing on the home page");
         foreach (var name in advanced) if (F(name).Visible) throw new Exception(name + " visible on the home page");
         var budget = (Label)F("budget");
@@ -177,9 +178,11 @@ internal static class SettingsFormTests
         var fps = Field<ComboBox>(form, "fps");
         var duration = Field<NumericUpDown>(form, "duration");
         var minutes = Field<NumericUpDown>(form, "shareMinutes");
+        var volume = Field<VolumeSlider>(form, "micVolume");
+        int loudness = volume.Value;
         int res = resolution.SelectedIndex, rate = fps.SelectedIndex;
         decimal length = duration.Value, life = minutes.Value;
-        var targets = new Control[] { resolution, fps, duration, minutes }
+        var targets = new Control[] { resolution, fps, duration, minutes, volume }
             .Concat(duration.Controls.Cast<Control>())
             .Concat(minutes.Controls.Cast<Control>());
         foreach (var delta in new[] { 120, -120 })
@@ -193,6 +196,7 @@ internal static class SettingsFormTests
         Equal(rate, fps.SelectedIndex);
         Equal(length, duration.Value);
         Equal(life, minutes.Value);
+        Equal(loudness, volume.Value);
         form.Close();
     }
 
@@ -279,6 +283,56 @@ internal static class SettingsFormTests
         Equal("", form.ReadSettings().ScreenshotsDirectory);
         Equal(read.ScreenshotFolder(), folder.Text);
         form.Close();
+    }
+
+    static void AudioDeviceSettings()
+    {
+        using var form = NewSettingsForm();
+        form.Show();
+        Application.DoEvents();
+        var output = Field<ComboBox>(form, "desktopDevice");
+        var input = Field<ComboBox>(form, "micDevice");
+        if (output.Visible || input.Visible) throw new Exception("device choice on the home page");
+        Field<Button>(form, "gear").PerformClick();
+        Application.DoEvents();
+        foreach (var combo in new[] { output, input })
+        {
+            if (!combo.Visible) throw new Exception("device choice missing on the settings page");
+            Equal("Windows default", combo.Items[0]);
+            Equal(0, combo.SelectedIndex);
+        }
+        var read = form.ReadSettings();
+        Equal("default", read.DesktopDevice);
+        Equal("default", read.MicrophoneDevice);
+        Equal(100, read.DesktopVolume);
+        Equal(100, read.MicrophoneVolume);
+
+        // A connected device can be chosen (only where the PC has one).
+        if (output.Items.Count > 1)
+        {
+            output.SelectedIndex = 1;
+            if (form.ReadSettings().DesktopDevice == "default") throw new Exception("chosen output not applied");
+            output.SelectedIndex = 0;
+            Equal("default", form.ReadSettings().DesktopDevice);
+        }
+        Field<VolumeSlider>(form, "micVolume").Value = 150;
+        Equal(150, form.ReadSettings().MicrophoneVolume);
+        Field<VolumeSlider>(form, "desktopVolume").Value = 999;
+        Equal(VolumeSlider.Max, form.ReadSettings().DesktopVolume);
+        form.Close();
+
+        // An unplugged device stays chosen, shown as unavailable.
+        using var unplugged = NewSettingsForm(new AppSettings { MicrophoneDevice = "{0.0.1.00000000}.{gone}" });
+        var mic = Field<ComboBox>(unplugged, "micDevice");
+        Equal("Unavailable device", mic.Text);
+        Equal("{0.0.1.00000000}.{gone}", unplugged.ReadSettings().MicrophoneDevice);
+
+        // The preview: the level with the volume applied, on a -60..0 dB scale.
+        Equal(1f, VolumeSlider.MeterFraction(1, 100));
+        Equal(0f, VolumeSlider.MeterFraction(0, 100));
+        Equal(0f, VolumeSlider.MeterFraction(1, 0));
+        Equal(1f, VolumeSlider.MeterFraction(0.5f, 200));
+        if (Math.Abs(VolumeSlider.MeterFraction(0.5f, 100) - 0.9f) > 0.01f) throw new Exception("-6 dB not at 90 %");
     }
 
     // Sends a real WM_MOUSEWHEEL, as the mouse would, to the control under the cursor.

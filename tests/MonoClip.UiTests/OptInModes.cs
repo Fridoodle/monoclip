@@ -151,6 +151,9 @@ internal static class OptInModes
         Shot(form, "popup-home-sharing.png");
         Call(form, "ShowMore");
         Fit(more);
+        // Example levels, so the shot shows the volume preview (a quiet and a peaking source).
+        Field<VolumeSlider>(form, "desktopVolume").Level = 0.25f;
+        Field<VolumeSlider>(form, "micVolume").Level = 1f;
         Shot(form, "popup-settings.png");
         form.Close();
         return 0;

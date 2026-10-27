@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+- Audio devices: desktop audio and the microphone still follow the Windows default device (also when it changes in Windows), but **Settings → Audio** now lets you pick a specific output (e.g. your headset) and microphone instead. A device that is unplugged stays chosen and shows as unavailable.
+- Volume for both, 0–200 % (more than 100 % for quiet microphones), applied at once without restarting the buffer.
+- Live preview: while the settings page is open, a bar under each volume shows the level as a clip will get it, with the volume applied. It turns white when it would clip.
+
 ## 1.3.1
 
 - Stretched resolutions: a fullscreen game in, say, 4:3 stretched on a 16:9 monitor (Valorant, CS2) now fills clips and screenshots like it fills the screen, instead of leaving black bars at the sides. MonoClip notices when a game switches the monitor to a resolution of another shape than the desktop. For a GPU set to show black bars instead, switch off **Settings → Stretched resolutions fill the clip**.
