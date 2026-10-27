@@ -25,6 +25,21 @@ internal sealed class SettingsBinder(AppSettings start)
         Bind(() => combo.SelectedIndex = Math.Max(0, options.ToList().FindIndex(o => EqualityComparer<T>.Default.Equals(o.Value, get(Draft)))),
             h => combo.SelectedIndexChanged += h, s => combo.SelectedIndex < 0 ? s : set(s, options[combo.SelectedIndex].Value));
     }
+    public void Volume(VolumeSlider slider, Func<AppSettings, int> get, Func<AppSettings, int, AppSettings> set) =>
+        Bind(() => slider.Value = get(Draft), h => slider.ValueChanged += h, s => set(s, slider.Value));
+    // A drop-down whose options change (audio devices come and go): Push() reads options() again. A chosen value that is
+    // not listed (an unplugged device) stays chosen and is shown as unavailable.
+    public void Devices(ComboBox combo, Func<IReadOnlyList<(string Label, string Value)>> options, Func<AppSettings, string> get, Func<AppSettings, string, AppSettings> set)
+    {
+        var shown = new List<(string Label, string Value)>();
+        Bind(() =>
+        {
+            var current = get(Draft); var next = options().ToList();
+            if (!next.Exists(o => o.Value == current)) next.Add(("Unavailable device", current));
+            if (!next.SequenceEqual(shown)) { shown = next; combo.BeginUpdate(); combo.Items.Clear(); combo.Items.AddRange(next.Select(o => (object)o.Label).ToArray()); combo.EndUpdate(); }
+            combo.SelectedIndex = shown.FindIndex(o => o.Value == current);
+        }, h => combo.SelectedIndexChanged += h, s => combo.SelectedIndex < 0 ? s : set(s, shown[combo.SelectedIndex].Value));
+    }
     public void Push() { pushing = true; try { foreach (var push in pushes) push(); } finally { pushing = false; } }
     void Bind(Action push, Action<EventHandler> subscribe, Func<AppSettings, AppSettings> edit)
     {

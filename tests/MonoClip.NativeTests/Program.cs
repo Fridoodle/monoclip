@@ -254,7 +254,7 @@ try {
         Console.WriteLine($"PASS live Cloudflare quick tunnel served {body.Length} bytes publicly, range 206, wrong token 404, tunnel reused for a second (trimmed) clip, offline after stop (status {after})");return 0;
         static string SharePolicyToken()=>MonoClip.Core.SharePolicy.NewToken();
     }
-    if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error" or "--stretch")) return RegressionTests.Run(args);
+    if(args.Any(a => a is "--restart" or "--timeout" or "--stale" or "--stop-save" or "--dispose-save" or "--export-drain" or "--target" or "--rapid-save" or "--export-error" or "--stretch" or "--audio-devices" or "--volume")) return RegressionTests.Run(args);
     if(args.Contains("--game")) {
         var fixture=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../tests/MonoClip.GameFixture/bin/Release/net10.0-windows/MonoClip.GameFixture.exe"));
         if(!File.Exists(fixture))throw new Exception("Direct3D game fixture missing");

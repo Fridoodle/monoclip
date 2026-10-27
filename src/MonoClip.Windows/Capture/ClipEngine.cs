@@ -11,7 +11,7 @@ public sealed class ClipEngine : IClipEngine
     Obs.Signal? savedCallback; ObsHost? host; CaptureScene? capture;
     readonly List<Task> exports = []; string? saveError;
     readonly object saveGate = new(); long outputGeneration;
-    IntPtr output, videoEncoder; readonly List<IntPtr> audioEncoders = []; readonly List<IntPtr> audioSources = [];
+    IntPtr output, videoEncoder; readonly List<IntPtr> audioEncoders = []; readonly List<IntPtr> audioSources = []; IntPtr desktopAudio, microphone;
     AppSettings settings = new(); bool disposed;
     // Monitors whose DXGI capture gave no frames: they start with WGC from then on, also after a restart.
     readonly HashSet<string> wgcMonitors = [];
@@ -39,8 +39,9 @@ public sealed class ClipEngine : IClipEngine
             capture = new(s.Width, s.Height, wgcMonitors) { StretchToFill = s.StretchToFill }; capture.MonitorFallback += () => SetStatus("Buffer active · WGC fallback");
             Obs.obs_set_output_source(0, capture.Source);
             // Audio tracks as CapturePolicy lays them out: each source feeds the mix and, when recorded, its own track.
-            if (s.DesktopAudio) AddAudio("wasapi_output_capture", "Desktop audio", s.DesktopDevice, CapturePolicy.AudioMixers(s, ClipAudio.Desktop), 1);
-            if (s.Microphone) AddAudio("wasapi_input_capture", "Microphone", s.MicrophoneDevice, CapturePolicy.AudioMixers(s, ClipAudio.Microphone), 2);
+            if (s.DesktopAudio) desktopAudio = AddAudio("wasapi_output_capture", "Desktop audio", s.DesktopDevice, CapturePolicy.AudioMixers(s, ClipAudio.Desktop), 1);
+            if (s.Microphone) microphone = AddAudio("wasapi_input_capture", "Microphone", s.MicrophoneDevice, CapturePolicy.AudioMixers(s, ClipAudio.Microphone), 2);
+            SetVolumes(s);
             using (var data = new ObsData().Set("rate_control", "CBR").Set("bitrate", CapturePolicy.BitrateKbps(s)).Set("keyint_sec", 1L).Set("preset", "speed").Set("profile", "high").Set("bf", 0L).Set("bframes", 0L).Set("target_usage", "TU5"))
             {
                 // Intel (QSV) reads "bframes" and "target_usage" (TU5: fast), AMD and NVIDIA "bf" and "preset".
@@ -60,10 +61,16 @@ public sealed class ClipEngine : IClipEngine
         }
         catch (Exception e) { Release(); SetFailure("Error: " + e.Message); throw; }
     }
-    void AddAudio(string id, string name, string device, uint mixers, uint channel)
+    IntPtr AddAudio(string id, string name, string device, uint mixers, uint channel)
     {
         using var data = new ObsData().Set("device_id", device).Set("use_device_timing", false);
         var source = Obs.Require(Obs.obs_source_create(id, name, data.Handle, IntPtr.Zero), name); audioSources.Add(source); Obs.obs_source_set_audio_mixers(source, mixers); Obs.obs_set_output_source(channel, source);
+        return source;
+    }
+    void SetVolumes(AppSettings s)
+    {
+        if (desktopAudio != IntPtr.Zero) Obs.obs_source_set_volume(desktopAudio, s.DesktopVolume / 100f);
+        if (microphone != IntPtr.Zero) Obs.obs_source_set_volume(microphone, s.MicrophoneVolume / 100f);
     }
     void AddAudioEncoder(nuint mixer, string name)
     {
@@ -153,7 +160,7 @@ public sealed class ClipEngine : IClipEngine
     public void Apply(AppSettings s)
     {
         s.Validate();
-        if (!IsRunning || !CapturePolicy.NeedsRestart(settings, s)) { settings = s with { }; if (capture != null) capture.StretchToFill = s.StretchToFill; return; }
+        if (!IsRunning || !CapturePolicy.NeedsRestart(settings, s)) { settings = s with { }; if (capture != null) capture.StretchToFill = s.StretchToFill; SetVolumes(s); return; }
         var old = settings; Stop();
         try { Start(s); } catch { try { Start(old); } catch { } throw; }
     }
@@ -193,7 +200,7 @@ public sealed class ClipEngine : IClipEngine
         foreach (var e in audioEncoders) Obs.obs_encoder_release(e); audioEncoders.Clear(); if (videoEncoder != IntPtr.Zero) { Obs.obs_encoder_release(videoEncoder); videoEncoder = IntPtr.Zero; }
         if (host != null) { for (uint i = 0; i < 3; i++) Obs.obs_set_output_source(i, IntPtr.Zero); }
         capture?.Dispose(); capture = null;
-        foreach (var a in audioSources) Obs.obs_source_release(a); audioSources.Clear();
+        foreach (var a in audioSources) Obs.obs_source_release(a); audioSources.Clear(); desktopAudio = microphone = IntPtr.Zero;
         host?.Dispose(); host = null;
     }
     public void Dispose() { if (disposed) return; Release(); disposed = true; timer.Dispose(); dispatcher.Dispose(); }

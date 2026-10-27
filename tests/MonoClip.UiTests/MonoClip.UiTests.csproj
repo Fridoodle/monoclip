@@ -36,6 +36,8 @@
     <Compile Include="../../src/MonoClip.Windows/Capture/Screenshot.cs" Link="Screenshot.cs" />
     <Compile Include="../../src/MonoClip.Windows/Capture/ForegroundTracker.cs" Link="ForegroundTracker.cs" />
     <Compile Include="../../src/MonoClip.Windows/Capture/DisplayMode.cs" Link="DisplayMode.cs" />
+    <Compile Include="../../src/MonoClip.Windows/Capture/AudioDevices.cs" Link="AudioDevices.cs" />
+    <Compile Include="../../src/MonoClip.Windows/UI/VolumeSlider.cs" Link="VolumeSlider.cs" />
     <ProjectReference Include="../../src/MonoClip.Core/MonoClip.Core.csproj" />
   </ItemGroup>
 </Project>

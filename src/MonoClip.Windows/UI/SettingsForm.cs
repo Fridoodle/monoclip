@@ -1,4 +1,5 @@
 using MonoClip.Core;
+using MonoClip.Windows.Capture;
 namespace MonoClip.Windows.UI;
 
 // The settings popup, opened from the tray like Mullvad's: it appears right above the taskbar next to the tray with
@@ -11,7 +12,13 @@ public sealed class SettingsForm : Form
     static readonly (string, (int, int))[] Resolutions = [("1280 × 720", (1280, 720)), ("1920 × 1080", (1920, 1080)), ("2560 × 1440", (2560, 1440)), ("3840 × 2160", (3840, 2160))];
     static readonly (string, int)[] FrameRates = [("30", 30), ("60", 60), ("120", 120)];
     AppSettings original; readonly SettingsBinder binder; readonly IClipEngine engine; readonly Action<AppSettings> saveSettings; readonly Action toggle, saveClip;
-    readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox();
+    readonly ComboBox resolution = new MonoComboBox(), fps = new MonoComboBox(), games = new MonoComboBox(), desktopDevice = new MonoComboBox(), micDevice = new MonoComboBox();
+    readonly VolumeSlider desktopVolume = new(), micVolume = new();
+    // The device lists (read again whenever the popup opens) and the live level preview, which only runs while the
+    // settings page is open.
+    IReadOnlyList<(string Label, string Value)> outputs = [], inputs = [];
+    AudioDevices.Meter? desktopMeter, micMeter; string? desktopMeterFor, micMeterFor;
+    readonly System.Windows.Forms.Timer meterTicker = new() { Interval = 50 };
     // Clip length, hotkey, folder and autostart have a control on each page (the "2" ones on the settings page).
     readonly NumericUpDown duration = new MonoNumeric(), duration2 = new MonoNumeric(), shareMinutes = new MonoNumeric();
     readonly TextBox hotkey = new(), hotkey2 = new(), directory = new(), directory2 = new(), screenshotHotkey = new(), screenshotDirectory = new();
@@ -64,10 +71,16 @@ public sealed class SettingsForm : Form
         Toggle(more, "Stretched resolutions fill the clip", stretchToFill, s => s.StretchToFill, (s, v) => s with { StretchToFill = v });
         more.Note("A fullscreen game in 4:3 stretched on a 16:9 monitor fills clips and screenshots like the screen. Off: black bars at the sides.");
         more.Section("AUDIO");
+        RefreshDevices();
         Toggle(more, "Record desktop audio", desktop, s => s.DesktopAudio, (s, v) => s with { DesktopAudio = v });
+        AudioDevice(desktopDevice, "Output device", () => outputs, s => s.DesktopDevice, (s, v) => s with { DesktopDevice = v });
+        binder.Volume(desktopVolume, s => s.DesktopVolume, (s, v) => s with { DesktopVolume = v }); more.Add(new Card("Desktop volume", desktopVolume, 170));
         Toggle(more, "Record microphone", mic, s => s.Microphone, (s, v) => s with { Microphone = v });
+        AudioDevice(micDevice, "Mic device", () => inputs, s => s.MicrophoneDevice, (s, v) => s with { MicrophoneDevice = v });
+        binder.Volume(micVolume, s => s.MicrophoneVolume, (s, v) => s with { MicrophoneVolume = v }); more.Add(new Card("Mic volume", micVolume, 170));
+        more.Note("Windows default follows the device chosen in Windows. The bar under a volume shows the level as a clip gets it.");
         Toggle(more, "Separate desktop and mic tracks", separateTracks, s => s.SeparateAudioTracks, (s, v) => s with { SeparateAudioTracks = v });
-        more.Note("Default Windows devices. With both recorded, separate tracks let Export mute one of them; off saves a little CPU.");
+        more.Note("With both recorded, separate tracks let Export mute one of them; off saves a little CPU.");
         Toggle(more, "Sound effects", clipBeep, s => s.ClipBeep, (s, v) => s with { ClipBeep = v });
         more.Section("CLIPS");
         ClipBasics(more, duration2, hotkey2, directory2);
@@ -100,11 +113,12 @@ public sealed class SettingsForm : Form
         moreFeedback.ForeColor = Look.Muted; more.Add(moreFeedback, 10);
 
         // Every edit is applied after a short pause; a few in a row are applied together.
-        binder.Edited += () => { UpdateBudget(); commitTimer.Stop(); commitTimer.Start(); };
+        binder.Edited += () => { UpdateBudget(); UpdateMeters(); commitTimer.Stop(); commitTimer.Start(); };
+        meterTicker.Tick += (_, _) => { desktopVolume.Level = desktopMeter?.Peak ?? 0; micVolume.Level = micMeter?.Peak ?? 0; };
         commitTimer.Tick += (_, _) => Commit(); shareTicker.Tick += (_, _) => UpdateShareControls();
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Commit(); Hide(); } };
         // The share countdown only needs updating while the popup is open.
-        VisibleChanged += (_, _) => { if (Visible) { RefreshGames(); UpdateStatus(); if (sharer != null) shareTicker.Start(); } else { Commit(); shareTicker.Stop(); } };
+        VisibleChanged += (_, _) => { if (Visible) { RefreshGames(); RefreshDevices(); binder.Push(); UpdateStatus(); if (sharer != null) shareTicker.Start(); } else { Commit(); shareTicker.Stop(); } UpdateMeters(); };
         DpiChanged += (_, _) => BeginInvoke(() => { if (popup && Visible) Place(); });
         home.HandleCreated += (_, _) => WindowChrome.DarkScrollbars(home.Handle); more.HandleCreated += (_, _) => WindowChrome.DarkScrollbars(more.Handle);
         EnableDrop(this);
@@ -136,6 +150,32 @@ public sealed class SettingsForm : Form
     {
         key.ReadOnly = true; key.TextAlign = HorizontalAlignment.Center; key.AccessibleName = name; key.Cursor = Cursors.Hand; binder.Text(key, get, set);
         key.KeyDown += (_, e) => { e.SuppressKeyPress = true; if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin or Keys.Escape or Keys.Tab) return; uint mods = Hotkey.NoRepeat | (e.Control ? 2u : 0) | (e.Shift ? 4u : 0) | (e.Alt ? 1u : 0); key.Text = new Hotkey(mods, e.KeyCode).ToString(); };
+    }
+    void AudioDevice(ComboBox combo, string caption, Func<IReadOnlyList<(string Label, string Value)>> options, Func<AppSettings, string> get, Func<AppSettings, string, AppSettings> set)
+    {
+        StyleCombo(combo); combo.AccessibleName = caption; binder.Devices(combo, options, get, set);
+        // Device names are long: the open list is as wide as the longest one needs (up to the screen), the box ellipsizes.
+        combo.DropDown += (_, _) => combo.DropDownWidth = Math.Clamp(combo.Items.Cast<object>().Select(i => TextRenderer.MeasureText(i.ToString(), combo.Font).Width).DefaultIfEmpty(0).Max() + Px(24), combo.Width, Screen.FromControl(combo).WorkingArea.Width / 2);
+        more.Add(new Card(caption, combo, 200));
+    }
+    void RefreshDevices()
+    {
+        static IReadOnlyList<(string, string)> With(List<(string Id, string Name)> devices) => [("Windows default", AudioDevices.Default), .. devices.Select(d => (d.Name, d.Id))];
+        outputs = With(AudioDevices.List(input: false)); inputs = With(AudioDevices.List(input: true));
+    }
+    // The preview runs while the settings page is open; a device is only opened for it while it is recorded.
+    void UpdateMeters()
+    {
+        bool open = Visible && more.Visible && !IsDisposed; var d = binder.Draft;
+        Swap(ref desktopMeter, ref desktopMeterFor, open && d.DesktopAudio ? d.DesktopDevice : null, input: false);
+        Swap(ref micMeter, ref micMeterFor, open && d.Microphone ? d.MicrophoneDevice : null, input: true);
+        if (desktopMeter != null || micMeter != null) meterTicker.Start(); else meterTicker.Stop();
+        if (desktopMeter == null) desktopVolume.Level = 0; if (micMeter == null) micVolume.Level = 0;
+    }
+    static void Swap(ref AudioDevices.Meter? meter, ref string? current, string? wanted, bool input)
+    {
+        if (wanted == current) return;
+        meter?.Dispose(); meter = wanted == null ? null : new AudioDevices.Meter(wanted, input); current = wanted;
     }
     static void StyleCombo(ComboBox c)
     {
@@ -175,8 +215,8 @@ public sealed class SettingsForm : Form
         if (work.Right < screen.Right) return new(work.Right - margin - w, y, w, h);
         return new(x, work.Bottom - margin - h, w, h);
     }
-    void ShowMore() { more.Visible = true; home.Visible = false; more.AutoScrollPosition = Point.Empty; back.Focus(); }
-    void ShowHome() { home.Visible = true; more.Visible = false; }
+    void ShowMore() { more.Visible = true; home.Visible = false; more.AutoScrollPosition = Point.Empty; back.Focus(); UpdateMeters(); }
+    void ShowHome() { home.Visible = true; more.Visible = false; UpdateMeters(); }
     // Like a tray flyout: clicking anywhere else closes it (not while one of its own dialogs is open).
     protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); if (popup && dialogs == 0 && Visible) { Commit(); Hide(); } }
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -275,5 +315,9 @@ public sealed class SettingsForm : Form
     internal void KeepExportDirectory(string folder) { original = original with { ExportDirectory = folder }; binder.Draft = binder.Draft with { ExportDirectory = folder }; }
     void Run(Action action) { try { action(); UpdateStatus(); } catch (Exception e) { Feedback(e.Message); } }
     void RefreshGames() { Run(() => { var chosen = games.Text; games.Items.Clear(); games.Items.Add("All clips"); foreach (var g in ClipLibrary.GetGames(original.ClipsDirectory)) games.Items.Add(g); games.SelectedIndex = Math.Max(0, games.Items.IndexOf(chosen)); }); }
-    protected override void Dispose(bool disposing) { if (disposing) { engine.StatusChanged -= EngineStatus; shareTicker.Dispose(); commitTimer.Dispose(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { engine.StatusChanged -= EngineStatus; shareTicker.Dispose(); commitTimer.Dispose(); meterTicker.Dispose(); desktopMeter?.Dispose(); micMeter?.Dispose(); desktopMeter = micMeter = null; }
+        base.Dispose(disposing);
+    }
 }

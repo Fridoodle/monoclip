@@ -46,8 +46,13 @@ public sealed record AppSettings
     // Folder for screenshots; empty means the Screenshots folder in the clip folder.
     public string ScreenshotsDirectory { get; set; } = "";
     public string ScreenshotFolder() => string.IsNullOrWhiteSpace(ScreenshotsDirectory) ? Path.Combine(ClipsDirectory, Screenshots.DefaultFolderName) : ScreenshotsDirectory;
+    // "default" is the Windows default device and follows it; otherwise a device id chosen in the settings.
     public string MicrophoneDevice { get; set; } = "default";
     public string DesktopDevice { get; set; } = "default";
+    // Volume in percent (100 = as the device delivers it, up to 200 for quiet microphones); applies without a restart.
+    public int MicrophoneVolume { get; set; } = 100;
+    public int DesktopVolume { get; set; } = 100;
+    public const int MaxVolume = 200;
     public void Validate()
     {
         if ((Width, Height) is not ((1280, 720) or (1920, 1080) or (2560, 1440) or (3840, 2160)))
@@ -60,6 +65,7 @@ public sealed record AppSettings
         if (string.Equals(ScreenshotHotkey.Trim(), Hotkey.Trim(), StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The screenshot hotkey must differ from the save hotkey.");
         if (!string.IsNullOrWhiteSpace(ScreenshotsDirectory) && (!Path.IsPathFullyQualified(ScreenshotsDirectory) || ScreenshotsDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0)) throw new ArgumentException("Screenshot folder must be a valid absolute path.");
         if (string.IsNullOrWhiteSpace(MicrophoneDevice) || string.IsNullOrWhiteSpace(DesktopDevice)) throw new ArgumentException("Audio devices must not be empty.");
+        if (MicrophoneVolume is < 0 or > MaxVolume || DesktopVolume is < 0 or > MaxVolume) throw new ArgumentException($"Volume must be 0-{MaxVolume} %.");
         if (ClipSeconds is < MinClipSeconds or > MaxClipSeconds) throw new ArgumentException($"Clip duration must be between {MinClipSeconds} and {MaxClipSeconds} seconds.");
         if (ShareMinutes is < SharePolicy.MinMinutes or > SharePolicy.MaxMinutes) throw new ArgumentException($"Link lifetime must be {SharePolicy.MinMinutes}-{SharePolicy.MaxMinutes} minutes.");
     }
